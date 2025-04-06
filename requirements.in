@@ -39,6 +39,7 @@ fastapi[all]>=0.90.0,<0.110.0
 # === Airflow Specific (Providers - Versions will be resolved) ===
 apache-airflow-providers-postgres
 apache-airflow-providers-docker
+apache-airflow-providers-openlineage>=1.8.0
 
 # === Notebook Support ===
 # ipykernel>=6.15.0,<6.27.0
