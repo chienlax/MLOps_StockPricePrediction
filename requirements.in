@@ -1,0 +1,45 @@
+# requirements.in
+# === Core & Data ===
+pandas>=1.5.0,<2.2.0
+numpy>=1.21.0,<1.27.0
+python-dotenv>=1.0.0,<1.1.0
+
+# === Data Source ===
+yfinance>=0.2.10,<0.3.0
+
+# === ML Models & Utils ===
+scikit-learn>=1.1.0,<1.4.0
+statsmodels>=0.13.0,<0.15.0
+
+# --- CHOOSE ONE FRAMEWORK ---
+# Option 1: PyTorch (Seems more likely to work with Py3.11/3.12 via pip)
+# Allow versions 2.2.0 and higher, check PyTorch docs for latest stable recommended range
+torch>=2.2.0,<2.7.0
+
+# Option 2: TensorFlow (Comment out if using PyTorch)
+# Try relaxing the constraint significantly or use CPU version.
+# Check TF website for official Py3.11 wheel availability on Windows/Linux.
+# tensorflow>=2.12.0,<2.16.0 # Trying a higher range, check compatibility!
+# OR try CPU specific version:
+# tensorflow-cpu>=2.12.0,<2.16.0
+# --- END CHOOSE ONE ---
+
+# === MLOps Tools ===
+mlflow>=2.17.0,<2.21.3 # <--- CHANGE HERE: Target latest available stable series
+dvc>=2.50.0,<3.0.0
+
+# === Visualization ===
+plotly>=5.10.0,<5.20.0
+matplotlib>=3.5.0,<3.9.0
+seaborn>=0.12.0,<0.14.0
+
+# === API / Dashboard ===
+fastapi[all]>=0.90.0,<0.110.0
+
+# === Airflow Specific (Providers - Versions will be resolved) ===
+apache-airflow-providers-postgres
+apache-airflow-providers-docker
+
+# === Notebook Support ===
+# ipykernel>=6.15.0,<6.27.0
+# notebook>=6.5.0,<7.1.0

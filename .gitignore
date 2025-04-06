@@ -1,0 +1,97 @@
+# # Byte-compiled / optimized / DLL files
+# __pycache__/
+# *.py[cod]
+# *$py.class
+
+# # C extensions
+# *.so
+
+# # Distribution / packaging
+# .Python
+# build/
+# develop-eggs/
+# dist/
+# downloads/
+# eggs/
+# .eggs/
+# lib/
+# lib64/
+# parts/
+# sdist/
+# var/
+# wheels/
+# *.egg-info/
+# .installed.cfg
+# *.egg
+# MANIFEST
+
+# # PyInstaller
+# *.spec
+
+# # Installer logs
+# pip-log.txt
+# pip-delete-this-directory.txt
+
+# # Unit test / coverage reports
+# htmlcov/
+# .tox/
+# .nox/
+# .coverage
+# .coverage.*
+# .cache
+# nosetests.xml
+# coverage.xml
+# *.cover
+# .hypothesis/
+# .pytest_cache/
+
+# # Environments / Virtual Env
+# .env # Exclude the .env file itself
+# .venv
+# env/
+# venv/
+# ENV/
+# env.bak/
+# venv.bak/
+
+# # Spyder project settings
+# .spyderproject
+# .spyproject
+
+# # Rope project settings
+# .ropeproject
+
+# # mkdocs documentation
+# /site
+
+# # Jupyter Notebook checkpoints
+# .ipynb_checkpoints
+
+# # IDE settings
+# .idea/
+# .vscode/
+# *.sublime-project
+# *.sublime-workspace
+
+# # OS generated files
+# .DS_Store
+# .DS_Store?
+# ._*
+# .Spotlight-V100
+# .Trashes
+# ehthumbs.db
+# Thumbs.db
+
+# # MLflow local tracking / artifacts (often tracked separately or via server)
+# # mlruns/ # Let's keep this locally for now, comment out if using remote tracking
+
+# # DVC internal cache
+# .dvc/cache
+
+# # Airflow local artifacts (if not using Docker volumes effectively)
+# # airflow.db
+# # unittests.cfg
+# # webserver_config.py
+
+# # Docker cache/build related
+# docker-compose.override.yml

@@ -1,0 +1,125 @@
+# docker-compose.yml
+x-airflow-common: &airflow-common
+  # Use the custom image built from our Dockerfile
+  build: .
+  # Image tag can be set here if preferred over build context alone
+  # image: your-dockerhub-username/stock-prediction-airflow:latest
+  env_file:
+    - .env # Load environment variables from .env file
+  environment:
+    &airflow-common-env
+    AIRFLOW__CORE__EXECUTOR: CeleryExecutor # Or LocalExecutor for simpler setup initially
+    AIRFLOW__CORE__LOAD_EXAMPLES: 'false' # Disable example DAGs
+    AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+    # Point Airflow to the MLflow server within the Docker network
+    AIRFLOW__MLFLOW__TRACKING_URI: ${MLFLOW_TRACKING_URI:-http://mlflow-server:5000}
+    # Add other Airflow configs via environment variables as needed
+  volumes:
+    - ./airflow/dags:/opt/airflow/dags:rw # Mount local DAGs folder
+    - ./airflow/logs:/opt/airflow/logs:rw # Mount local logs folder
+    - ./airflow/plugins:/opt/airflow/plugins:rw # Mount local plugins folder
+    - ./src:/opt/airflow/src:ro # Mount project source code (read-only)
+    - ./data:/opt/airflow/data:rw # Mount project data folder (read-write)
+    - ./config:/opt/airflow/config:ro # Mount config folder (read-only)
+  depends_on:
+    postgres:
+      condition: service_healthy
+    # redis: # Needed for CeleryExecutor
+    #   condition: service_healthy
+    mlflow-server:
+      condition: service_started # Wait for MLflow to start
+
+services:
+  postgres:
+    image: postgres:13
+    container_name: stockpred-postgres
+    environment:
+      - POSTGRES_USER=airflow
+      - POSTGRES_PASSWORD=airflow
+      - POSTGRES_DB=airflow
+    ports:
+      - "5432:5432" # Expose if you need external access to DB
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - airflow-db-volume:/var/lib/postgresql/data
+
+  # redis: # Needed for CeleryExecutor
+  #   image: redis:latest
+  #   container_name: stockpred-redis
+  #   ports:
+  #     - "6379:6379"
+  #   healthcheck:
+  #     test: ["CMD", "redis-cli", "ping"]
+  #     interval: 5s
+  #     timeout: 3s
+  #     retries: 50
+  #   volumes:
+  #     - airflow-redis-volume:/data
+
+  mlflow-server:
+    image: ghcr.io/mlflow/mlflow:v2.8.0 # Use a specific MLflow version
+    container_name: stockpred-mlflow-server
+    ports:
+      - "5001:5000" # Expose MLflow UI on host port 5001 (internal 5000)
+    command: mlflow server --host 0.0.0.0 --port 5000 --backend-store-uri /mlruns --default-artifact-root /mlruns/artifacts
+    volumes:
+      - airflow-mlflow-volume:/mlruns # Persist MLflow data
+
+  airflow-webserver:
+    <<: *airflow-common
+    container_name: stockpred-airflow-webserver
+    command: webserver
+    ports:
+      - "8080:8080" # Airflow UI on host port 8080
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  airflow-scheduler:
+    <<: *airflow-common
+    container_name: stockpred-airflow-scheduler
+    command: scheduler
+    healthcheck:
+      test: ["CMD-SHELL", "airflow jobs check --job-type SchedulerJob --hostname \"$$HOSTNAME\""]
+      interval: 60s
+      timeout: 30s
+      retries: 5
+
+  # airflow-worker: # Needed for CeleryExecutor
+  #   <<: *airflow-common
+  #   container_name: stockpred-airflow-worker
+  #   command: celery worker
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "airflow jobs check --job-type WorkerJob --hostname \"$$HOSTNAME\""]
+  #     interval: 60s
+  #     timeout: 30s
+  #     retries: 5
+
+  # airflow-init:
+  #   <<: *airflow-common
+  #   container_name: stockpred-airflow-init
+  #   entrypoint: /bin/bash
+  #   command:
+  #     - -c
+  #     - |
+  #       airflow db init && \
+  #       airflow users create \
+  #         --username admin \
+  #         --firstname Admin \
+  #         --lastname User \
+  #         --role Admin \
+  #         --email admin@example.com \
+  #         --password admin # CHANGE THIS PASSWORD!
+  #   restart: on-failure
+
+
+volumes:
+  airflow-db-volume:
+  airflow-mlflow-volume:
+  # airflow-redis-volume: # Needed for CeleryExecutor
