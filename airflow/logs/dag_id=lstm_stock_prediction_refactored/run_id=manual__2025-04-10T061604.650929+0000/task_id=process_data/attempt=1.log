@@ -1,0 +1,90 @@
+[2025-04-10T06:16:05.363+0000] {local_task_job_runner.py:123} INFO - ::group::Pre task execution logs
+[2025-04-10T06:16:05.372+0000] {taskinstance.py:2614} INFO - Dependencies all met for dep_context=non-requeueable deps ti=<TaskInstance: lstm_stock_prediction_refactored.process_data manual__2025-04-10T06:16:04.650929+00:00 [queued]>
+[2025-04-10T06:16:05.377+0000] {taskinstance.py:2614} INFO - Dependencies all met for dep_context=requeueable deps ti=<TaskInstance: lstm_stock_prediction_refactored.process_data manual__2025-04-10T06:16:04.650929+00:00 [queued]>
+[2025-04-10T06:16:05.378+0000] {taskinstance.py:2867} INFO - Starting attempt 1 of 2
+[2025-04-10T06:16:05.386+0000] {taskinstance.py:2890} INFO - Executing <Task(BashOperator): process_data> on 2025-04-10 06:16:04.650929+00:00
+[2025-04-10T06:16:05.390+0000] {standard_task_runner.py:72} INFO - Started process 275 to run task
+[2025-04-10T06:16:05.392+0000] {standard_task_runner.py:104} INFO - Running: ['***', 'tasks', 'run', 'lstm_stock_prediction_refactored', 'process_data', 'manual__2025-04-10T06:16:04.650929+00:00', '--job-id', '4', '--raw', '--subdir', 'DAGS_FOLDER/lstm_refactored_dag.py', '--cfg-path', '/tmp/tmpccxghyxr']
+[2025-04-10T06:16:05.393+0000] {standard_task_runner.py:105} INFO - Job 4: Subtask process_data
+[2025-04-10T06:16:05.435+0000] {task_command.py:467} INFO - Running <TaskInstance: lstm_stock_prediction_refactored.process_data manual__2025-04-10T06:16:04.650929+00:00 [running]> on host df775d9d51b3
+[2025-04-10T06:16:05.494+0000] {taskinstance.py:3134} INFO - Exporting env vars: AIRFLOW_CTX_DAG_OWNER='***_team' AIRFLOW_CTX_DAG_ID='lstm_stock_prediction_refactored' AIRFLOW_CTX_TASK_ID='process_data' AIRFLOW_CTX_EXECUTION_DATE='2025-04-10T06:16:04.650929+00:00' AIRFLOW_CTX_TRY_NUMBER='1' AIRFLOW_CTX_DAG_RUN_ID='manual__2025-04-10T06:16:04.650929+00:00'
+[2025-04-10T06:16:05.496+0000] {taskinstance.py:732} INFO - ::endgroup::
+[2025-04-10T06:16:05.507+0000] {subprocess.py:78} INFO - Tmp dir root location: /tmp
+[2025-04-10T06:16:05.509+0000] {subprocess.py:88} INFO - Running command: ['/usr/bin/bash', '-c', 'python /opt/***/src/data/make_dataset.py --config /opt/***/config/params.yaml']
+[2025-04-10T06:16:05.517+0000] {subprocess.py:99} INFO - Output:
+[2025-04-10T06:16:06.203+0000] {subprocess.py:106} INFO - Traceback (most recent call last):
+[2025-04-10T06:16:06.204+0000] {subprocess.py:106} INFO -   File "/opt/***/src/data/make_dataset.py", line 9, in <module>
+[2025-04-10T06:16:06.214+0000] {subprocess.py:106} INFO -     import ta
+[2025-04-10T06:16:06.216+0000] {subprocess.py:106} INFO - ModuleNotFoundError: No module named 'ta'
+[2025-04-10T06:16:06.313+0000] {subprocess.py:110} INFO - Command exited with return code 1
+[2025-04-10T06:16:06.322+0000] {taskinstance.py:3313} ERROR - Task failed with exception
+Traceback (most recent call last):
+  File "/home/airflow/.local/lib/python3.11/site-packages/airflow/models/taskinstance.py", line 768, in _execute_task
+    result = _execute_callable(context=context, **execute_callable_kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/airflow/.local/lib/python3.11/site-packages/airflow/models/taskinstance.py", line 734, in _execute_callable
+    return ExecutionCallableRunner(
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/airflow/.local/lib/python3.11/site-packages/airflow/utils/operator_helpers.py", line 252, in run
+    return self.func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/airflow/.local/lib/python3.11/site-packages/airflow/models/baseoperator.py", line 424, in wrapper
+    return func(self, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/airflow/.local/lib/python3.11/site-packages/airflow/operators/bash.py", line 276, in execute
+    raise AirflowException(
+airflow.exceptions.AirflowException: Bash command failed. The command returned a non-zero exit code 1.
+[2025-04-10T06:16:06.329+0000] {taskinstance.py:1226} INFO - Marking task as UP_FOR_RETRY. dag_id=lstm_stock_prediction_refactored, task_id=process_data, run_id=manual__2025-04-10T06:16:04.650929+00:00, execution_date=20250410T061604, start_date=20250410T061605, end_date=20250410T061606
+[2025-04-10T06:16:06.352+0000] {taskinstance.py:341} INFO - ::group::Post task execution logs
+[2025-04-10T06:16:06.353+0000] {standard_task_runner.py:124} ERROR - Failed to execute job 4 for task process_data (Bash command failed. The command returned a non-zero exit code 1.; 275)
+Traceback (most recent call last):
+  File "/home/airflow/.local/lib/python3.11/site-packages/airflow/task/task_runner/standard_task_runner.py", line 117, in _start_by_fork
+    ret = args.func(args, dag=self.dag)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/airflow/.local/lib/python3.11/site-packages/airflow/cli/cli_config.py", line 49, in command
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/airflow/.local/lib/python3.11/site-packages/airflow/utils/cli.py", line 116, in wrapper
+    return f(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^
+  File "/home/airflow/.local/lib/python3.11/site-packages/airflow/cli/commands/task_command.py", line 483, in task_run
+    task_return_code = _run_task_by_selected_method(args, _dag, ti)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/airflow/.local/lib/python3.11/site-packages/airflow/cli/commands/task_command.py", line 256, in _run_task_by_selected_method
+    return _run_raw_task(args, ti)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/airflow/.local/lib/python3.11/site-packages/airflow/cli/commands/task_command.py", line 341, in _run_raw_task
+    return ti._run_raw_task(
+           ^^^^^^^^^^^^^^^^^
+  File "/home/airflow/.local/lib/python3.11/site-packages/airflow/utils/session.py", line 97, in wrapper
+    return func(*args, session=session, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/airflow/.local/lib/python3.11/site-packages/airflow/models/taskinstance.py", line 3006, in _run_raw_task
+    return _run_raw_task(
+           ^^^^^^^^^^^^^^
+  File "/home/airflow/.local/lib/python3.11/site-packages/airflow/models/taskinstance.py", line 274, in _run_raw_task
+    TaskInstance._execute_task_with_callbacks(
+  File "/home/airflow/.local/lib/python3.11/site-packages/airflow/models/taskinstance.py", line 3161, in _execute_task_with_callbacks
+    result = self._execute_task(context, task_orig)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/airflow/.local/lib/python3.11/site-packages/airflow/models/taskinstance.py", line 3185, in _execute_task
+    return _execute_task(self, context, task_orig)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/airflow/.local/lib/python3.11/site-packages/airflow/models/taskinstance.py", line 768, in _execute_task
+    result = _execute_callable(context=context, **execute_callable_kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/airflow/.local/lib/python3.11/site-packages/airflow/models/taskinstance.py", line 734, in _execute_callable
+    return ExecutionCallableRunner(
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/airflow/.local/lib/python3.11/site-packages/airflow/utils/operator_helpers.py", line 252, in run
+    return self.func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/airflow/.local/lib/python3.11/site-packages/airflow/models/baseoperator.py", line 424, in wrapper
+    return func(self, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/airflow/.local/lib/python3.11/site-packages/airflow/operators/bash.py", line 276, in execute
+    raise AirflowException(
+airflow.exceptions.AirflowException: Bash command failed. The command returned a non-zero exit code 1.
+[2025-04-10T06:16:06.367+0000] {local_task_job_runner.py:266} INFO - Task exited with return code 1
+[2025-04-10T06:16:06.388+0000] {taskinstance.py:3901} INFO - 0 downstream tasks scheduled from follow-on schedule check
+[2025-04-10T06:16:06.391+0000] {local_task_job_runner.py:245} INFO - ::endgroup::

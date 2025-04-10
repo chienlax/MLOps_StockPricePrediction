@@ -41,6 +41,10 @@ apache-airflow-providers-postgres
 apache-airflow-providers-docker
 apache-airflow-providers-openlineage>=1.8.0
 
+## === Other Neccessary Library ===
+pyyaml # If not already added
+ta>=0.11.0,<0.12.0
+
 # === Notebook Support ===
 # ipykernel>=6.15.0,<6.27.0
 # notebook>=6.5.0,<7.1.0

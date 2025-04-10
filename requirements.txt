@@ -931,6 +931,7 @@ zc-lockfile==3.0.post1
     # via dvc
 zipp==3.21.0
     # via importlib-metadata
+ta==0.11.0
 
 # The following packages are considered to be unsafe in a requirements file:
 # setuptools

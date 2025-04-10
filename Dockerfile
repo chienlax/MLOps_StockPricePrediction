@@ -22,8 +22,10 @@ COPY requirements.txt /requirements.txt
 # writing to site-packages, although it's generally preferred to install system-wide
 # if the base image allows it or use a virtualenv inside the container (more complex).
 # Let's try without --user first.
-RUN pip cache purge && \
-    pip install --no-cache-dir -r /requirements.txt
+# RUN pip cache purge && \
+#     pip install --no-cache-dir -r /requirements.txt
+
+RUN pip install -r /requirements.txt
 
 # Optional: Copy source code if needed inside image (we use mount for dev)
 # COPY src/ /opt/airflow/src/
