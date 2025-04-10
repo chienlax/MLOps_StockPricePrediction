@@ -22,13 +22,15 @@ x-airflow-common: &airflow-common
     - ./src:/opt/airflow/src:ro # Mount project source code (read-only)
     - ./data:/opt/airflow/data:rw # Mount project data folder (read-write)
     - ./config:/opt/airflow/config:ro # Mount config folder (read-only)
+    - ./notebooks:/opt/airflow/notebooks:rw # Mount notebooks folder (read-write)
+  user: "${AIRFLOW_UID:-1000}:0" # Ensures container runs as host user (adjust UID if needed, GID 0 for root group often works)
   depends_on:
     postgres:
       condition: service_healthy
     # redis: # Needed for CeleryExecutor
     #   condition: service_healthy
     mlflow-server:
-      condition: service_started # Wait for MLflow to start
+      condition: service_started
 
 services:
   postgres:
@@ -86,6 +88,8 @@ services:
     <<: *airflow-common
     container_name: stockpred-airflow-scheduler
     command: scheduler
+    ports: # <--- ADD THIS PORTS SECTION (or add to existing if you have one)
+      - "8888:8888" # Map host port 8888 to container port 8888 for Jupyter
     healthcheck:
       test: ["CMD-SHELL", "airflow jobs check --job-type SchedulerJob --hostname \"$$HOSTNAME\""]
       interval: 60s

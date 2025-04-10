@@ -2,12 +2,23 @@
 import argparse
 import time
 import pickle
-import yaml  # pip install pyyaml if not already installed
+import yaml
 import numpy as np
 import pandas as pd
 import yfinance as yf
 import ta
 from pathlib import Path
+import logging
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+if not logger.hasHandlers():
+    handler = logging.StreamHandler() # Defaults to stderr
+    handler.setLevel(logging.INFO) # <--- ADD THIS LINE
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
 
 # --- Loading data function ---
 # load_data(tickers_list, period, interval, fetch_delay, output_dir) -> None (saves individual pkls)
@@ -16,30 +27,29 @@ from pathlib import Path
 # preprocess_data(df) -> pd.DataFrame
 # align_and_process_data(ticker_data) -> np.ndarray, np.ndarray, list, list
 
-#%%
 def load_data(tickers_list, period, interval, fetch_delay, output_dir):
     """Loads data for tickers and saves each as a pickle file."""
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    print(f"Saving raw data to: {output_dir}")
+    logger.info(f"Saving raw data to: {output_dir}")
+
     for t in tickers_list:
         output_path = output_dir / f"{t}_raw.pkl"
         if output_path.exists():
-            print(f"Skipping download for {t}, file exists: {output_path}")
+            logger.info(f"Skipping download for {t}, file exists: {output_path}")
             continue
         try:
             data = yf.Ticker(t).history(period=period, interval=interval)
             if not data.empty:
                 with open(output_path, 'wb') as f:
                     pickle.dump(data, f)
-                print(f"Loaded and saved raw data for {t} to {output_path}")
+                logger.info(f"Loaded and saved raw data for {t} to {output_path}") 
             else:
-                print(f"No data loaded for {t}")
+                logger.warning(f"No data loaded for {t}")
             time.sleep(fetch_delay)
         except Exception as e:
-            print(f"Error loading {t}: {e}")
+            logger.error(f"Error loading {t}: {e}", exc_info=True)
 
-# %%
 def add_technical_indicators(ticker_data):
     for t in ticker_data:
         df = ticker_data[t]
@@ -88,17 +98,16 @@ def add_technical_indicators(ticker_data):
         ticker_data[t] = df
     return ticker_data
 
-#%%
 def preprocess_data(df):
     # Fill forward then backward to handle NaNs
-    df = df.fillna(method='ffill').fillna(method='bfill')
+    # df = df.fillna(method='ffill').fillna(method='bfill')
+    df = df.ffill().bfill()
     # Create target variable (next day's close price)
     df['Target'] = df['Close'].shift(-1)
     # Drop the last row since it will have NaN target
     df = df.dropna()
     return df
 
-#%%
 def align_and_process_data(ticker_data):
     tickers = list(ticker_data.keys())
     
@@ -132,7 +141,6 @@ def align_and_process_data(ticker_data):
     
     return processed_data, targets, feature_columns, tickers
 
-#%%
 def filter_correlated_features(ticker_data, threshold=0.9):
     """
     Analyze feature correlations and remove highly correlated features
@@ -171,76 +179,117 @@ def filter_correlated_features(ticker_data, threshold=0.9):
     
     return filtered_ticker_data, features_to_keep
 
-#%%
 def run_processing(config_path: str):
     """Main function to run all data processing steps."""
-    with open(config_path, 'r') as f:
-        params = yaml.safe_load(f)
+    try:
+        with open(config_path, 'r') as f:
+            params = yaml.safe_load(f)
+        logger.debug(f"Loaded parameters: {params}") # Use logger.debug for verbose info
 
-    # Define paths from config
-    raw_data_dir = Path(params['output_paths']['raw_data_template']).parent
-    processed_output_path = Path(params['output_paths']['processed_data_path'])
-    processed_output_path.parent.mkdir(parents=True, exist_ok=True)
+        # Define paths from config
+        raw_data_dir = Path(params['output_paths']['raw_data_template']).parent
+        processed_output_path = Path(params['output_paths']['processed_data_path'])
+        processed_output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    tickers_list = params['data_loading']['tickers']
-    period = params['data_loading']['period']
-    interval = params['data_loading']['interval']
-    fetch_delay = params['data_loading']['fetch_delay']
-    corr_threshold = params['feature_engineering']['correlation_threshold']
+        logger.info(f"Raw data directory: {raw_data_dir}")
+        logger.info(f"Processed data output path: {processed_output_path}")
 
-    # 1. Load Raw Data (or ensure it's downloaded)
-    print("--- Starting Data Loading ---")
-    load_data(tickers_list, period, interval, fetch_delay, raw_data_dir)
-    print("--- Finished Data Loading ---")
+        tickers_list = params['data_loading']['tickers']
+        period = params['data_loading']['period']
+        interval = params['data_loading']['interval']
+        fetch_delay = params['data_loading']['fetch_delay']
+        corr_threshold = params['feature_engineering']['correlation_threshold']
 
-    # Load from saved pickles
-    ticker_data = {}
-    for t in tickers_list:
-        raw_path = raw_data_dir / f"{t}_raw.pkl"
-        if raw_path.exists():
-            with open(raw_path, 'rb') as f:
-                ticker_data[t] = pickle.load(f)
-        else:
-             print(f"Warning: Raw data file not found for {t} at {raw_path}")
-    # Filter out any tickers where data wasn't loaded
-    ticker_data = {k: v for k, v in ticker_data.items() if v is not None and not v.empty}
-    if not ticker_data:
-        raise ValueError("No valid ticker data loaded. Exiting.")
-    loaded_tickers = list(ticker_data.keys()) # Use only successfully loaded tickers
+        # 1. Load Raw Data (or ensure it's downloaded)
+        logger.info("--- Starting Data Loading ---")
+        load_data(tickers_list, period, interval, fetch_delay, raw_data_dir)
+        logger.info("--- Finished Data Loading ---")
 
-    # 2. Add Technical Indicators
-    print("--- Starting Feature Engineering (Indicators) ---")
-    ticker_data = add_technical_indicators(ticker_data)
-    print("--- Finished Feature Engineering (Indicators) ---")
+        # Load from saved pickles
+        ticker_data = {}
+        for t in tickers_list:
+            raw_path = raw_data_dir / f"{t}_raw.pkl"
+            if raw_path.exists():
+                with open(raw_path, 'rb') as f:
+                    ticker_data[t] = pickle.load(f)
+            else:
+                logger.warning(f"Raw data file not found for {t} at {raw_path}")
 
-    # 3. Filter Correlated Features
-    print("--- Starting Feature Filtering ---")
-    ticker_data, remaining_features = filter_correlated_features(ticker_data, corr_threshold)
-    print(f"Features remaining after filtering: {len(remaining_features)}")
-    print("--- Finished Feature Filtering ---")
+        # Filter out any tickers where data wasn't loaded
+        ticker_data = {k: v for k, v in ticker_data.items() if v is not None and not v.empty}
+        if not ticker_data:
+            logger.error("No valid ticker data loaded. Exiting.")
+            raise ValueError("No valid ticker data loaded. Exiting.")
+        loaded_tickers = list(ticker_data.keys())
 
-    # 4. Align and Process (includes preprocess_data internally)
-    print("--- Starting Data Alignment & Processing ---")
-    processed_data, targets, feature_columns, final_tickers = align_and_process_data(ticker_data)
-    # Ensure final_tickers matches the order in processed_data/targets
-    print(f"Processed data shape: {processed_data.shape}")
-    print(f"Targets shape: {targets.shape}")
-    print("--- Finished Data Alignment & Processing ---")
+        # 2. Add Technical Indicators
+        logger.info("--- Starting Feature Engineering (Indicators) ---")
+        ticker_data = add_technical_indicators(ticker_data)
+        logger.info("--- Finished Feature Engineering (Indicators) ---")
 
-    # 5. Save Processed Data
-    print(f"--- Saving Processed Data to {processed_output_path} ---")
-    np.savez(
-        processed_output_path,
-        processed_data=processed_data,
-        targets=targets,
-        feature_columns=np.array(feature_columns, dtype=object), # Use object type for lists/strings
-        tickers=np.array(final_tickers, dtype=object)
-    )
-    print("--- Finished Saving Processed Data ---")
+        # 3. Filter Correlated Features
+        logger.info("--- Starting Feature Filtering ---")
+        ticker_data, remaining_features = filter_correlated_features(ticker_data, corr_threshold)
+        logger.info(f"Features remaining after filtering: {len(remaining_features)}")
+        logger.info("--- Finished Feature Filtering ---")
+
+        # 4. Align and Process
+        logger.info("--- Starting Data Alignment & Processing ---")
+        processed_data, targets, feature_columns, final_tickers = align_and_process_data(ticker_data)
+        logger.info(f"Processed data shape: {processed_data.shape}")
+        logger.info(f"Targets shape: {targets.shape}")
+        logger.info(f"Final tickers in order: {final_tickers}")
+        logger.info("--- Finished Data Alignment & Processing ---")
+
+        # 5. Save Processed Data
+        # logger.info(f"--- Saving Processed Data to {processed_output_path} ---")
+        # try:
+        #     np.savez(
+        #         processed_output_path,
+        #         processed_data=processed_data,
+        #         targets=targets,
+        #         feature_columns=np.array(feature_columns, dtype=object),
+        #         tickers=np.array(final_tickers, dtype=object)
+        #     )
+        #     logger.info(f"Successfully saved processed data to {processed_output_path}")
+        # except Exception as e:
+        #         logger.error(f"Failed to save processed data to {processed_output_path}", exc_info=True)
+        #         raise # Re-raise the exception so Airflow task fails
+        # logger.info("--- Finished Saving Processed Data ---")
+
+        absolute_save_path = processed_output_path.resolve()
+        logger.info(f"Attempting to save to absolute path: {absolute_save_path}")
+        try:
+            np.savez(
+                processed_output_path,
+                processed_data=processed_data,
+                targets=targets,
+                feature_columns=np.array(feature_columns, dtype=object),
+                tickers=np.array(final_tickers, dtype=object)
+            )
+            logger.info(f"Successfully saved processed data to {processed_output_path}")
+            # Add an existence check right after saving
+            if absolute_save_path.exists():
+                logger.info(f"Verified file exists at: {absolute_save_path}")
+            else:
+                logger.error(f"!!! File DOES NOT exist immediately after saving at: {absolute_save_path}")
+        except Exception as e:
+            logger.error(f"Failed to save processed data to {processed_output_path}", exc_info=True)
+            raise
+
+
+    except Exception as e:
+        logger.error("An error occurred during the data processing pipeline.", exc_info=True)
+        raise # Re-raise the exception to ensure Airflow task fails
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', type=str, 
                         required=True, help='Path to the configuration file (params.yaml)')
     args = parser.parse_args()
+
+    logger.info(f"Starting data processing script with config: {args.config}")
+    print("--- PRINT TEST: Starting Data Loading ---")
+
     run_processing(args.config)
+    logger.info("Data processing script finished.")

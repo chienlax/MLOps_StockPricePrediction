@@ -1,90 +1,80 @@
-[2025-04-10T06:13:44.474+0000] {local_task_job_runner.py:123} INFO - ::group::Pre task execution logs
-[2025-04-10T06:13:44.484+0000] {taskinstance.py:2614} INFO - Dependencies all met for dep_context=non-requeueable deps ti=<TaskInstance: lstm_stock_prediction_refactored.process_data scheduled__2025-03-31T08:00:00+00:00 [queued]>
-[2025-04-10T06:13:44.489+0000] {taskinstance.py:2614} INFO - Dependencies all met for dep_context=requeueable deps ti=<TaskInstance: lstm_stock_prediction_refactored.process_data scheduled__2025-03-31T08:00:00+00:00 [queued]>
-[2025-04-10T06:13:44.490+0000] {taskinstance.py:2867} INFO - Starting attempt 1 of 2
-[2025-04-10T06:13:44.499+0000] {taskinstance.py:2890} INFO - Executing <Task(BashOperator): process_data> on 2025-03-31 08:00:00+00:00
-[2025-04-10T06:13:44.502+0000] {standard_task_runner.py:72} INFO - Started process 191 to run task
-[2025-04-10T06:13:44.505+0000] {standard_task_runner.py:104} INFO - Running: ['***', 'tasks', 'run', 'lstm_stock_prediction_refactored', 'process_data', 'scheduled__2025-03-31T08:00:00+00:00', '--job-id', '2', '--raw', '--subdir', 'DAGS_FOLDER/lstm_refactored_dag.py', '--cfg-path', '/tmp/tmpxqx1wzne']
-[2025-04-10T06:13:44.508+0000] {standard_task_runner.py:105} INFO - Job 2: Subtask process_data
-[2025-04-10T06:13:44.554+0000] {task_command.py:467} INFO - Running <TaskInstance: lstm_stock_prediction_refactored.process_data scheduled__2025-03-31T08:00:00+00:00 [running]> on host df775d9d51b3
-[2025-04-10T06:13:44.618+0000] {taskinstance.py:3134} INFO - Exporting env vars: AIRFLOW_CTX_DAG_OWNER='***_team' AIRFLOW_CTX_DAG_ID='lstm_stock_prediction_refactored' AIRFLOW_CTX_TASK_ID='process_data' AIRFLOW_CTX_EXECUTION_DATE='2025-03-31T08:00:00+00:00' AIRFLOW_CTX_TRY_NUMBER='1' AIRFLOW_CTX_DAG_RUN_ID='scheduled__2025-03-31T08:00:00+00:00'
-[2025-04-10T06:13:44.620+0000] {taskinstance.py:732} INFO - ::endgroup::
-[2025-04-10T06:13:44.638+0000] {subprocess.py:78} INFO - Tmp dir root location: /tmp
-[2025-04-10T06:13:44.641+0000] {subprocess.py:88} INFO - Running command: ['/usr/bin/bash', '-c', 'python /opt/***/src/data/make_dataset.py --config /opt/***/config/params.yaml']
-[2025-04-10T06:13:44.652+0000] {subprocess.py:99} INFO - Output:
-[2025-04-10T06:13:46.092+0000] {subprocess.py:106} INFO - Traceback (most recent call last):
-[2025-04-10T06:13:46.094+0000] {subprocess.py:106} INFO -   File "/opt/***/src/data/make_dataset.py", line 9, in <module>
-[2025-04-10T06:13:46.096+0000] {subprocess.py:106} INFO -     import ta
-[2025-04-10T06:13:46.097+0000] {subprocess.py:106} INFO - ModuleNotFoundError: No module named 'ta'
-[2025-04-10T06:13:46.217+0000] {subprocess.py:110} INFO - Command exited with return code 1
-[2025-04-10T06:13:46.227+0000] {taskinstance.py:3313} ERROR - Task failed with exception
-Traceback (most recent call last):
-  File "/home/airflow/.local/lib/python3.11/site-packages/airflow/models/taskinstance.py", line 768, in _execute_task
-    result = _execute_callable(context=context, **execute_callable_kwargs)
-             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/airflow/.local/lib/python3.11/site-packages/airflow/models/taskinstance.py", line 734, in _execute_callable
-    return ExecutionCallableRunner(
-           ^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/airflow/.local/lib/python3.11/site-packages/airflow/utils/operator_helpers.py", line 252, in run
-    return self.func(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/airflow/.local/lib/python3.11/site-packages/airflow/models/baseoperator.py", line 424, in wrapper
-    return func(self, *args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/airflow/.local/lib/python3.11/site-packages/airflow/operators/bash.py", line 276, in execute
-    raise AirflowException(
-airflow.exceptions.AirflowException: Bash command failed. The command returned a non-zero exit code 1.
-[2025-04-10T06:13:46.237+0000] {taskinstance.py:1226} INFO - Marking task as UP_FOR_RETRY. dag_id=lstm_stock_prediction_refactored, task_id=process_data, run_id=scheduled__2025-03-31T08:00:00+00:00, execution_date=20250331T080000, start_date=20250410T061344, end_date=20250410T061346
-[2025-04-10T06:13:46.264+0000] {taskinstance.py:341} INFO - ::group::Post task execution logs
-[2025-04-10T06:13:46.266+0000] {standard_task_runner.py:124} ERROR - Failed to execute job 2 for task process_data (Bash command failed. The command returned a non-zero exit code 1.; 191)
-Traceback (most recent call last):
-  File "/home/airflow/.local/lib/python3.11/site-packages/airflow/task/task_runner/standard_task_runner.py", line 117, in _start_by_fork
-    ret = args.func(args, dag=self.dag)
-          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/airflow/.local/lib/python3.11/site-packages/airflow/cli/cli_config.py", line 49, in command
-    return func(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^
-  File "/home/airflow/.local/lib/python3.11/site-packages/airflow/utils/cli.py", line 116, in wrapper
-    return f(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^
-  File "/home/airflow/.local/lib/python3.11/site-packages/airflow/cli/commands/task_command.py", line 483, in task_run
-    task_return_code = _run_task_by_selected_method(args, _dag, ti)
-                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/airflow/.local/lib/python3.11/site-packages/airflow/cli/commands/task_command.py", line 256, in _run_task_by_selected_method
-    return _run_raw_task(args, ti)
-           ^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/airflow/.local/lib/python3.11/site-packages/airflow/cli/commands/task_command.py", line 341, in _run_raw_task
-    return ti._run_raw_task(
-           ^^^^^^^^^^^^^^^^^
-  File "/home/airflow/.local/lib/python3.11/site-packages/airflow/utils/session.py", line 97, in wrapper
-    return func(*args, session=session, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/airflow/.local/lib/python3.11/site-packages/airflow/models/taskinstance.py", line 3006, in _run_raw_task
-    return _run_raw_task(
-           ^^^^^^^^^^^^^^
-  File "/home/airflow/.local/lib/python3.11/site-packages/airflow/models/taskinstance.py", line 274, in _run_raw_task
-    TaskInstance._execute_task_with_callbacks(
-  File "/home/airflow/.local/lib/python3.11/site-packages/airflow/models/taskinstance.py", line 3161, in _execute_task_with_callbacks
-    result = self._execute_task(context, task_orig)
-             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/airflow/.local/lib/python3.11/site-packages/airflow/models/taskinstance.py", line 3185, in _execute_task
-    return _execute_task(self, context, task_orig)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/airflow/.local/lib/python3.11/site-packages/airflow/models/taskinstance.py", line 768, in _execute_task
-    result = _execute_callable(context=context, **execute_callable_kwargs)
-             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/airflow/.local/lib/python3.11/site-packages/airflow/models/taskinstance.py", line 734, in _execute_callable
-    return ExecutionCallableRunner(
-           ^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/airflow/.local/lib/python3.11/site-packages/airflow/utils/operator_helpers.py", line 252, in run
-    return self.func(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/airflow/.local/lib/python3.11/site-packages/airflow/models/baseoperator.py", line 424, in wrapper
-    return func(self, *args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/airflow/.local/lib/python3.11/site-packages/airflow/operators/bash.py", line 276, in execute
-    raise AirflowException(
-airflow.exceptions.AirflowException: Bash command failed. The command returned a non-zero exit code 1.
-[2025-04-10T06:13:46.284+0000] {local_task_job_runner.py:266} INFO - Task exited with return code 1
-[2025-04-10T06:13:46.302+0000] {taskinstance.py:3901} INFO - 0 downstream tasks scheduled from follow-on schedule check
-[2025-04-10T06:13:46.304+0000] {local_task_job_runner.py:245} INFO - ::endgroup::
+[2025-04-10T10:32:42.125+0000] {local_task_job_runner.py:123} INFO - ::group::Pre task execution logs
+[2025-04-10T10:32:42.141+0000] {taskinstance.py:2614} INFO - Dependencies all met for dep_context=non-requeueable deps ti=<TaskInstance: lstm_stock_prediction_refactored.process_data scheduled__2025-03-31T08:00:00+00:00 [queued]>
+[2025-04-10T10:32:42.146+0000] {taskinstance.py:2614} INFO - Dependencies all met for dep_context=requeueable deps ti=<TaskInstance: lstm_stock_prediction_refactored.process_data scheduled__2025-03-31T08:00:00+00:00 [queued]>
+[2025-04-10T10:32:42.147+0000] {taskinstance.py:2867} INFO - Starting attempt 1 of 2
+[2025-04-10T10:32:42.155+0000] {taskinstance.py:2890} INFO - Executing <Task(BashOperator): process_data> on 2025-03-31 08:00:00+00:00
+[2025-04-10T10:32:42.159+0000] {standard_task_runner.py:72} INFO - Started process 1777 to run task
+[2025-04-10T10:32:42.161+0000] {standard_task_runner.py:104} INFO - Running: ['***', 'tasks', 'run', 'lstm_stock_prediction_refactored', 'process_data', 'scheduled__2025-03-31T08:00:00+00:00', '--job-id', '48', '--raw', '--subdir', 'DAGS_FOLDER/lstm_refactored_dag.py', '--cfg-path', '/tmp/tmpguavqnph']
+[2025-04-10T10:32:42.163+0000] {standard_task_runner.py:105} INFO - Job 48: Subtask process_data
+[2025-04-10T10:32:42.195+0000] {task_command.py:467} INFO - Running <TaskInstance: lstm_stock_prediction_refactored.process_data scheduled__2025-03-31T08:00:00+00:00 [running]> on host f4de05ccd019
+[2025-04-10T10:32:42.250+0000] {taskinstance.py:3134} INFO - Exporting env vars: AIRFLOW_CTX_DAG_OWNER='***_team' AIRFLOW_CTX_DAG_ID='lstm_stock_prediction_refactored' AIRFLOW_CTX_TASK_ID='process_data' AIRFLOW_CTX_EXECUTION_DATE='2025-03-31T08:00:00+00:00' AIRFLOW_CTX_TRY_NUMBER='1' AIRFLOW_CTX_DAG_RUN_ID='scheduled__2025-03-31T08:00:00+00:00'
+[2025-04-10T10:32:42.251+0000] {taskinstance.py:732} INFO - ::endgroup::
+[2025-04-10T10:32:42.262+0000] {subprocess.py:78} INFO - Tmp dir root location: /tmp
+[2025-04-10T10:32:42.263+0000] {subprocess.py:88} INFO - Running command: ['/usr/bin/bash', '-c', 'python /opt/***/src/data/make_dataset.py --config /opt/***/config/params.yaml']
+[2025-04-10T10:32:42.269+0000] {subprocess.py:99} INFO - Output:
+[2025-04-10T10:32:42.914+0000] {subprocess.py:106} INFO - 2025-04-10 10:32:42,914 - __main__ - INFO - Starting data processing script with config: /opt/***/config/params.yaml
+[2025-04-10T10:32:42.918+0000] {subprocess.py:106} INFO - 2025-04-10 10:32:42,918 - __main__ - INFO - Raw data directory: data/raw
+[2025-04-10T10:32:42.919+0000] {subprocess.py:106} INFO - 2025-04-10 10:32:42,918 - __main__ - INFO - Processed data output path: data/processed/all_processed_data.npz
+[2025-04-10T10:32:42.919+0000] {subprocess.py:106} INFO - 2025-04-10 10:32:42,918 - __main__ - INFO - --- Starting Data Loading ---
+[2025-04-10T10:32:42.920+0000] {subprocess.py:106} INFO - 2025-04-10 10:32:42,918 - __main__ - INFO - Saving raw data to: data/raw
+[2025-04-10T10:32:43.584+0000] {subprocess.py:106} INFO - 2025-04-10 10:32:43,584 - __main__ - INFO - Loaded and saved raw data for AAPL to data/raw/AAPL_raw.pkl
+[2025-04-10T10:32:48.883+0000] {subprocess.py:106} INFO - 2025-04-10 10:32:48,882 - __main__ - INFO - Loaded and saved raw data for MA to data/raw/MA_raw.pkl
+[2025-04-10T10:32:54.163+0000] {subprocess.py:106} INFO - 2025-04-10 10:32:54,163 - __main__ - INFO - Loaded and saved raw data for CSCO to data/raw/CSCO_raw.pkl
+[2025-04-10T10:32:59.401+0000] {subprocess.py:106} INFO - 2025-04-10 10:32:59,401 - __main__ - INFO - Loaded and saved raw data for MSFT to data/raw/MSFT_raw.pkl
+[2025-04-10T10:33:04.627+0000] {subprocess.py:106} INFO - 2025-04-10 10:33:04,627 - __main__ - INFO - Loaded and saved raw data for AMZN to data/raw/AMZN_raw.pkl
+[2025-04-10T10:33:09.835+0000] {subprocess.py:106} INFO - 2025-04-10 10:33:09,834 - __main__ - INFO - Loaded and saved raw data for GOOG to data/raw/GOOG_raw.pkl
+[2025-04-10T10:33:15.140+0000] {subprocess.py:106} INFO - 2025-04-10 10:33:15,140 - __main__ - INFO - Loaded and saved raw data for IBM to data/raw/IBM_raw.pkl
+[2025-04-10T10:33:20.141+0000] {subprocess.py:106} INFO - 2025-04-10 10:33:20,141 - __main__ - INFO - --- Finished Data Loading ---
+[2025-04-10T10:33:20.157+0000] {subprocess.py:106} INFO - 2025-04-10 10:33:20,142 - __main__ - INFO - --- Starting Feature Engineering (Indicators) ---
+[2025-04-10T10:33:20.163+0000] {subprocess.py:106} INFO - /home/***/.local/lib/python3.11/site-packages/ta/trend.py:1030: FutureWarning: Series.__setitem__ treating keys as positions is deprecated. In a future version, integer keys will always be treated as labels (consistent with DataFrame behavior). To set a value by position, use `ser.iloc[pos] = value`
+[2025-04-10T10:33:20.163+0000] {subprocess.py:106} INFO -   self._psar[i] = high2
+[2025-04-10T10:33:20.261+0000] {subprocess.py:106} INFO - /home/***/.local/lib/python3.11/site-packages/ta/trend.py:1030: FutureWarning: Series.__setitem__ treating keys as positions is deprecated. In a future version, integer keys will always be treated as labels (consistent with DataFrame behavior). To set a value by position, use `ser.iloc[pos] = value`
+[2025-04-10T10:33:20.262+0000] {subprocess.py:106} INFO -   self._psar[i] = high2
+[2025-04-10T10:33:20.348+0000] {subprocess.py:106} INFO - /home/***/.local/lib/python3.11/site-packages/ta/trend.py:1030: FutureWarning: Series.__setitem__ treating keys as positions is deprecated. In a future version, integer keys will always be treated as labels (consistent with DataFrame behavior). To set a value by position, use `ser.iloc[pos] = value`
+[2025-04-10T10:33:20.348+0000] {subprocess.py:106} INFO -   self._psar[i] = high2
+[2025-04-10T10:33:20.424+0000] {subprocess.py:106} INFO - /home/***/.local/lib/python3.11/site-packages/ta/trend.py:1030: FutureWarning: Series.__setitem__ treating keys as positions is deprecated. In a future version, integer keys will always be treated as labels (consistent with DataFrame behavior). To set a value by position, use `ser.iloc[pos] = value`
+[2025-04-10T10:33:20.425+0000] {subprocess.py:106} INFO -   self._psar[i] = high2
+[2025-04-10T10:33:20.514+0000] {subprocess.py:106} INFO - /home/***/.local/lib/python3.11/site-packages/ta/trend.py:1030: FutureWarning: Series.__setitem__ treating keys as positions is deprecated. In a future version, integer keys will always be treated as labels (consistent with DataFrame behavior). To set a value by position, use `ser.iloc[pos] = value`
+[2025-04-10T10:33:20.515+0000] {subprocess.py:106} INFO -   self._psar[i] = high2
+[2025-04-10T10:33:20.591+0000] {subprocess.py:106} INFO - /home/***/.local/lib/python3.11/site-packages/ta/trend.py:1030: FutureWarning: Series.__setitem__ treating keys as positions is deprecated. In a future version, integer keys will always be treated as labels (consistent with DataFrame behavior). To set a value by position, use `ser.iloc[pos] = value`
+[2025-04-10T10:33:20.592+0000] {subprocess.py:106} INFO -   self._psar[i] = high2
+[2025-04-10T10:33:20.686+0000] {subprocess.py:106} INFO - /home/***/.local/lib/python3.11/site-packages/ta/trend.py:1030: FutureWarning: Series.__setitem__ treating keys as positions is deprecated. In a future version, integer keys will always be treated as labels (consistent with DataFrame behavior). To set a value by position, use `ser.iloc[pos] = value`
+[2025-04-10T10:33:20.687+0000] {subprocess.py:106} INFO -   self._psar[i] = high2
+[2025-04-10T10:33:20.737+0000] {subprocess.py:106} INFO - 2025-04-10 10:33:20,737 - __main__ - INFO - --- Finished Feature Engineering (Indicators) ---
+[2025-04-10T10:33:20.737+0000] {subprocess.py:106} INFO - 2025-04-10 10:33:20,737 - __main__ - INFO - --- Starting Feature Filtering ---
+[2025-04-10T10:33:20.743+0000] {subprocess.py:106} INFO - 2025-04-10 10:33:20,743 - __main__ - INFO - Features remaining after filtering: 16
+[2025-04-10T10:33:20.743+0000] {subprocess.py:106} INFO - 2025-04-10 10:33:20,743 - __main__ - INFO - --- Finished Feature Filtering ---
+[2025-04-10T10:33:20.744+0000] {subprocess.py:106} INFO - 2025-04-10 10:33:20,743 - __main__ - INFO - --- Starting Data Alignment & Processing ---
+[2025-04-10T10:33:20.783+0000] {subprocess.py:106} INFO - /opt/***/src/data/make_dataset.py:136: FutureWarning: DataFrame.fillna with 'method' is deprecated and will raise in a future version. Use obj.ffill() or obj.bfill() instead.
+[2025-04-10T10:33:20.784+0000] {subprocess.py:106} INFO -   df = aligned_data[ticker][feature_columns + ['Target']].fillna(method='ffill').fillna(method='bfill')
+[2025-04-10T10:33:20.785+0000] {subprocess.py:106} INFO - /opt/***/src/data/make_dataset.py:136: FutureWarning: DataFrame.fillna with 'method' is deprecated and will raise in a future version. Use obj.ffill() or obj.bfill() instead.
+[2025-04-10T10:33:20.785+0000] {subprocess.py:106} INFO -   df = aligned_data[ticker][feature_columns + ['Target']].fillna(method='ffill').fillna(method='bfill')
+[2025-04-10T10:33:20.786+0000] {subprocess.py:106} INFO - /opt/***/src/data/make_dataset.py:136: FutureWarning: DataFrame.fillna with 'method' is deprecated and will raise in a future version. Use obj.ffill() or obj.bfill() instead.
+[2025-04-10T10:33:20.786+0000] {subprocess.py:106} INFO -   df = aligned_data[ticker][feature_columns + ['Target']].fillna(method='ffill').fillna(method='bfill')
+[2025-04-10T10:33:20.787+0000] {subprocess.py:106} INFO - /opt/***/src/data/make_dataset.py:136: FutureWarning: DataFrame.fillna with 'method' is deprecated and will raise in a future version. Use obj.ffill() or obj.bfill() instead.
+[2025-04-10T10:33:20.788+0000] {subprocess.py:106} INFO -   df = aligned_data[ticker][feature_columns + ['Target']].fillna(method='ffill').fillna(method='bfill')
+[2025-04-10T10:33:20.789+0000] {subprocess.py:106} INFO - /opt/***/src/data/make_dataset.py:136: FutureWarning: DataFrame.fillna with 'method' is deprecated and will raise in a future version. Use obj.ffill() or obj.bfill() instead.
+[2025-04-10T10:33:20.790+0000] {subprocess.py:106} INFO -   df = aligned_data[ticker][feature_columns + ['Target']].fillna(method='ffill').fillna(method='bfill')
+[2025-04-10T10:33:20.790+0000] {subprocess.py:106} INFO - /opt/***/src/data/make_dataset.py:136: FutureWarning: DataFrame.fillna with 'method' is deprecated and will raise in a future version. Use obj.ffill() or obj.bfill() instead.
+[2025-04-10T10:33:20.791+0000] {subprocess.py:106} INFO -   df = aligned_data[ticker][feature_columns + ['Target']].fillna(method='ffill').fillna(method='bfill')
+[2025-04-10T10:33:20.792+0000] {subprocess.py:106} INFO - /opt/***/src/data/make_dataset.py:136: FutureWarning: DataFrame.fillna with 'method' is deprecated and will raise in a future version. Use obj.ffill() or obj.bfill() instead.
+[2025-04-10T10:33:20.793+0000] {subprocess.py:106} INFO -   df = aligned_data[ticker][feature_columns + ['Target']].fillna(method='ffill').fillna(method='bfill')
+[2025-04-10T10:33:20.794+0000] {subprocess.py:106} INFO - 2025-04-10 10:33:20,794 - __main__ - INFO - Processed data shape: (751, 7, 16)
+[2025-04-10T10:33:20.795+0000] {subprocess.py:106} INFO - 2025-04-10 10:33:20,794 - __main__ - INFO - Targets shape: (751, 7)
+[2025-04-10T10:33:20.795+0000] {subprocess.py:106} INFO - 2025-04-10 10:33:20,794 - __main__ - INFO - Final tickers in order: ['AAPL', 'MA', 'CSCO', 'MSFT', 'AMZN', 'GOOG', 'IBM']
+[2025-04-10T10:33:20.795+0000] {subprocess.py:106} INFO - 2025-04-10 10:33:20,794 - __main__ - INFO - --- Finished Data Alignment & Processing ---
+[2025-04-10T10:33:20.796+0000] {subprocess.py:106} INFO - 2025-04-10 10:33:20,794 - __main__ - INFO - --- Saving Processed Data to data/processed/all_processed_data.npz ---
+[2025-04-10T10:33:20.797+0000] {subprocess.py:106} INFO - 2025-04-10 10:33:20,795 - __main__ - INFO - Successfully saved processed data to data/processed/all_processed_data.npz
+[2025-04-10T10:33:20.797+0000] {subprocess.py:106} INFO - 2025-04-10 10:33:20,795 - __main__ - INFO - --- Finished Saving Processed Data ---
+[2025-04-10T10:33:20.798+0000] {subprocess.py:106} INFO - 2025-04-10 10:33:20,795 - __main__ - INFO - Data processing script finished.
+[2025-04-10T10:33:20.798+0000] {subprocess.py:106} INFO - --- PRINT TEST: Starting Data Loading ---
+[2025-04-10T10:33:20.798+0000] {subprocess.py:106} INFO - Filtering highly correlated features with threshold 0.9
+[2025-04-10T10:33:20.799+0000] {subprocess.py:106} INFO - Identified 20 highly correlated features to remove: ['High', 'Low', 'Close', 'EMA_50', 'EMA_200', 'BB_High', 'BB_Low', 'OBV', 'SMA_50', 'VWAP', 'PSAR', 'Stochastic_D', 'CCI', 'Williams_R', 'Donchian_High', 'Donchian_Low', 'Keltner_High', 'Keltner_Low', 'DI_Positive', 'DI_Negative']
+[2025-04-10T10:33:20.799+0000] {subprocess.py:106} INFO - Excluding 'Close' column from removal list.
+[2025-04-10T10:33:20.800+0000] {subprocess.py:106} INFO - Final list of 19 features to remove: ['High', 'Low', 'EMA_50', 'EMA_200', 'BB_High', 'BB_Low', 'OBV', 'SMA_50', 'VWAP', 'PSAR', 'Stochastic_D', 'CCI', 'Williams_R', 'Donchian_High', 'Donchian_Low', 'Keltner_High', 'Keltner_Low', 'DI_Positive', 'DI_Negative']
+[2025-04-10T10:33:20.861+0000] {subprocess.py:110} INFO - Command exited with return code 0
+[2025-04-10T10:33:20.877+0000] {taskinstance.py:341} INFO - ::group::Post task execution logs
+[2025-04-10T10:33:20.878+0000] {taskinstance.py:353} INFO - Marking task as SUCCESS. dag_id=lstm_stock_prediction_refactored, task_id=process_data, run_id=scheduled__2025-03-31T08:00:00+00:00, execution_date=20250331T080000, start_date=20250410T103242, end_date=20250410T103320
+[2025-04-10T10:33:20.926+0000] {local_task_job_runner.py:266} INFO - Task exited with return code 0
+[2025-04-10T10:33:20.943+0000] {taskinstance.py:3901} INFO - 1 downstream tasks scheduled from follow-on schedule check
+[2025-04-10T10:33:20.944+0000] {local_task_job_runner.py:245} INFO - ::endgroup::
