@@ -9,6 +9,8 @@ import yfinance as yf
 import ta
 from pathlib import Path
 import logging
+import os
+import sys
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -20,18 +22,27 @@ if not logger.hasHandlers():
     handler.setFormatter(formatter)
     logger.addHandler(handler)
 
-# --- Loading data function ---
-# load_data(tickers_list, period, interval, fetch_delay, output_dir) -> None (saves individual pkls)
-# add_technical_indicators(ticker_data) -> dict
-# filter_correlated_features(ticker_data, threshold) -> dict, list
-# preprocess_data(df) -> pd.DataFrame
-# align_and_process_data(ticker_data) -> np.ndarray, np.ndarray, list, list
-
 def load_data(tickers_list, period, interval, fetch_delay, output_dir):
     """Loads data for tickers and saves each as a pickle file."""
     output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-    logger.info(f"Saving raw data to: {output_dir}")
+    
+    # --- DEBUGGING ---
+    abs_output_dir = output_dir.resolve() 
+    logger.info(f"Attempting to use RELATIVE output dir: {output_dir}")
+    logger.info(f"Attempting to use ABSOLUTE output dir: {abs_output_dir}")
+    logger.info(f"Current Working Directory inside container: {os.getcwd()}")
+    # --- END DEBUGGING ---
+
+    try:
+        logger.info(f"Attempting to create directory: {abs_output_dir}")
+        output_dir.mkdir(parents=True, exist_ok=True)
+        logger.info(f"Successfully called mkdir for: {abs_output_dir} (might not indicate success if permissions are wrong)")
+    except Exception as e:
+         logger.error(f"ERROR during mkdir for {abs_output_dir}: {e}", exc_info=True)
+         # If mkdir fails, we definitely won't save files
+         return 
+
+    logger.info(f"Saving raw data to: {abs_output_dir}") # Log the absolute path
 
     for t in tickers_list:
         output_path = output_dir / f"{t}_raw.pkl"

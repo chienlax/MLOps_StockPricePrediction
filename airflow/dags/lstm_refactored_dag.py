@@ -58,7 +58,7 @@ with DAG (
         task_id='train_final_model',
         bash_command=f'python {TRAIN_SCRIPT} --config {CONFIG_PATH}',
         # Ensure MLflow URI is available in the environment (should be from docker-compose)
-        env={'MLFLOW_TRACKING_URI': '{{ var.value.get("mlflow_tracking_uri", "http://localhost:5001/") }}'}, # Example using Airflow Variable as backup
+        # env={'MLFLOW_TRACKING_URI': '{{ var.value.get("mlflow_tracking_uri", "http://localhost:5001/") }}'}, --> This is the problem!!! Remove it
         doc_md="Loads features, scalers, and best params. Trains the final model, evaluates, visualizes, and logs results (params, metrics, model artifact) to MLflow.",
     )
 

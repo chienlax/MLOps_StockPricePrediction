@@ -10,22 +10,25 @@ feature_engineering:
   prediction_length: 1 # Currently only supporting 1-day ahead from the refactored logic
 
 optimization:
-  n_trials: 20 # Optuna trials
-  epochs: 20   # Epochs during optimization
+  n_trials: 1 # Optuna trials
+  epochs: 5   # Epochs during optimization
   patience: 5
 
 training:
-  epochs: 50    # Epochs for final training
+  epochs: 5    # Epochs for final training
 
-output_paths: # Paths relative to /opt/airflow within the container
-  raw_data_template: "data/raw/{ticker}_raw.pkl"
-  processed_data_path: "data/processed/all_processed_data.npz" # Saving as numpy archive
-  scalers_path: "data/processed/scalers.pkl"
-  split_data_path: "data/features/split_scaled_data.npz"
-  best_params_path: "config/best_params.json"
-  # Final model is saved by MLflow, not explicitly here
+output_paths:
+  # Use ABSOLUTE paths inside the container that point to the mounted volume - if you want to use relative paths, you need to mount the volume accordingly. If not, the data crawled will not appear in your local directory.
+  raw_data_template: "/opt/airflow/data/raw/{ticker}_raw.pkl"
+  processed_data_path: "/opt/airflow/data/processed/all_processed_data.npz" # Saving as numpy archive
+  scalers_path: "/opt/airflow/data/processed/scalers.pkl"
+  split_data_path: "/opt/airflow/data/features/split_scaled_data.npz"
+  best_params_path: "/opt/airflow/config/best_params.json" # Config might also need absolute if written by a task
+  # Note: We are mounting ./config to /opt/airflow/config, so this path for best_params is correct
 
 mlflow:
   experiment_name: "Stock_Price_Prediction_LSTM_Refactored"
   final_run_name: "final_model_training"
-  optuna_run_prefix: "optuna_trial_" # Maybe not log optuna trials directly
+  optuna_run_prefix: "optuna_trial_" # Prefix for Optuna runs
+  mlflow_uri: "http://mlflow-server:5000" # MLflow server URI (internal to Docker network)
+  tracking_uri: "http://mlflow-server:5000" # MLflow tracking URI (internal to Docker network)

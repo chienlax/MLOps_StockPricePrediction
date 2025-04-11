@@ -11,9 +11,10 @@ from torch.utils.data import DataLoader, TensorDataset
 import mlflow
 import mlflow.pytorch
 from pathlib import Path
+import os
 
-from .model_definitions import StockLSTM, StockLSTMWithAttention, StockLSTMWithCrossStockAttention
-from .evaluate_model import evaluate_model, visualize_predictions
+from model_definitions import StockLSTM, StockLSTMWithAttention, StockLSTMWithCrossStockAttention
+from evaluate_model import evaluate_model, visualize_predictions
 
 def train_final_model(best_params, X_train, y_train, X_test, y_test, num_features, num_stocks, y_scalers, tickers, device, training_epochs, plot_output_dir):
     """Train the final model with the best hyperparameters and log to MLflow"""
@@ -207,7 +208,10 @@ def run_training(config_path: str):
     # 5. Set up MLflow
     print(f"--- Setting MLflow Experiment: {mlflow_experiment} ---")
     # Tracking URI should be set by Airflow/Docker environment variable
-    print(f"Using MLflow Tracking URI: {mlflow.get_tracking_uri()}")
+    mlflow_tracking_uri = os.environ.get('MLFLOW_TRACKING_URI', 'http://mlflow-server:5000')
+    
+    print(f"Using MLflow Tracking URI: {mlflow_tracking_uri}")
+    mlflow.set_tracking_uri(mlflow_tracking_uri)
     mlflow.set_experiment(mlflow_experiment)
 
     # 6. Train Final Model
@@ -228,7 +232,6 @@ def run_training(config_path: str):
 
     # Optionally save model locally too, though MLflow handles it
     # torch.save(final_model.state_dict(), 'final_lstm_model_state.pth')
-
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()

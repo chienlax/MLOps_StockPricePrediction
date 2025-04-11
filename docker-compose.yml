@@ -14,6 +14,7 @@ x-airflow-common: &airflow-common
     #AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
     # Point Airflow to the MLflow server within the Docker network
     AIRFLOW__MLFLOW__TRACKING_URI: ${MLFLOW_TRACKING_URI:-http://mlflow-server:5000}
+    MLFLOW_TRACKING_URI: ${MLFLOW_TRACKING_URI:-http://mlflow-server:5000} # We add MLFLOW_TRACKING_URI explicitly because while AIRFLOW__MLFLOW__TRACKING_URI configures Airflow's internal MLflow hook/provider, your custom script needs a standard environment variable to read
     # Add other Airflow configs via environment variables as needed
   volumes:
     - ./airflow/dags:/opt/airflow/dags:rw # Mount local DAGs folder
@@ -21,8 +22,7 @@ x-airflow-common: &airflow-common
     - ./airflow/plugins:/opt/airflow/plugins:rw # Mount local plugins folder
     - ./src:/opt/airflow/src:ro # Mount project source code (read-only)
     - ./data:/opt/airflow/data:rw # Mount project data folder (read-write)
-    - ./config:/opt/airflow/config:ro # Mount config folder (read-only)
-    - ./notebooks:/opt/airflow/notebooks:rw # Mount notebooks folder (read-write)
+    - ./config:/opt/airflow/config:rw # Mount config folder (read-only)
   user: "${AIRFLOW_UID:-1000}:0" # Ensures container runs as host user (adjust UID if needed, GID 0 for root group often works)
   depends_on:
     postgres:
@@ -64,13 +64,22 @@ services:
   #     - airflow-redis-volume:/data
 
   mlflow-server:
-    image: ghcr.io/mlflow/mlflow:v2.13.1 # Use a specific MLflow version
+    image: ghcr.io/mlflow/mlflow:v2.13.1
     container_name: stockpred-mlflow-server
     ports:
       - "5001:5000" # Expose MLflow UI on host port 5001 (internal 5000)
-    command: mlflow server --host 0.0.0.0 --port 5000 --backend-store-uri /mlruns --default-artifact-root /mlruns/artifacts
+    # Remove default-artifact-root to let the server manage artifact paths
+    # via its API, forcing client uploads. Keep backend simple.
+    # --default-artifact-root /mlruns/artifacts # <-- REMOVE this line
+    command: >
+      mlflow server
+        --host 0.0.0.0
+        --port 5000
+        --backend-store-uri /mlruns  
     volumes:
       - airflow-mlflow-volume:/mlruns # Persist MLflow data
+    # user: "${AIRFLOW_UID:-1000}:0"
+
 
   airflow-webserver:
     <<: *airflow-common
@@ -87,8 +96,11 @@ services:
   airflow-scheduler:
     <<: *airflow-common
     container_name: stockpred-airflow-scheduler
+    # Use entrypoint to fix permissions before starting scheduler
+    # entrypoint: >
+    #   bash -c 'mkdir -p /home/airflow/.local/share/jupyter && chown -R "${AIRFLOW_UID:-1000}:0" /home/airflow/.local && exec airflow scheduler'
     command: scheduler
-    ports: # <--- ADD THIS PORTS SECTION (or add to existing if you have one)
+    ports:
       - "8888:8888" # Map host port 8888 to container port 8888 for Jupyter
     healthcheck:
       test: ["CMD-SHELL", "airflow jobs check --job-type SchedulerJob --hostname \"$$HOSTNAME\""]

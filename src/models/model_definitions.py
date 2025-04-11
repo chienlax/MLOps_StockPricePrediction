@@ -1,11 +1,8 @@
 # src/models/model_definitions.py
 import torch
 import torch.nn as nn
-
 # Goal: Isolate the PyTorch nn.Module classes
 
-
-# %%
 class StockLSTM(nn.Module):
     def __init__(self, num_stocks, num_features, hidden_size, num_layers, dropout_rate=0.2):
         super(StockLSTM, self).__init__()
@@ -44,7 +41,6 @@ class StockLSTM(nn.Module):
         return out.view(batch_size, 1, self.num_stocks)
 
 
-# %%
 class StockLSTMWithAttention(nn.Module):
     def __init__(self, num_stocks, num_features, hidden_size, num_layers, dropout_rate=0.2):
         super(StockLSTMWithAttention, self).__init__()
@@ -106,7 +102,7 @@ class StockLSTMWithAttention(nn.Module):
         # Reshape to (batch_size, 1, num_stocks) to match target shape
         return final_out.view(batch_size, 1, self.num_stocks)
 
-# %%
+
 class StockLSTMWithCrossStockAttention(nn.Module):
     def __init__(self, num_stocks, num_features, hidden_size, num_layers, dropout_rate=0.2):
         super(StockLSTMWithCrossStockAttention, self).__init__()

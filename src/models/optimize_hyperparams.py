@@ -10,10 +10,10 @@ import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
 import optuna
 from pathlib import Path
-from .model_definitions import StockLSTM, StockLSTMWithAttention, StockLSTMWithCrossStockAttention
-from .evaluate_model import evaluate_model # We need evaluation during objective calculation
+from model_definitions import StockLSTM, StockLSTMWithAttention, StockLSTMWithCrossStockAttention
+from evaluate_model import evaluate_model # We need evaluation during objective calculation
 
-#%%
+
 def objective(trial, X_train, y_train, X_test, y_test, num_features, num_stocks, y_scalers, device):
     """Optuna objective function for hyperparameter optimization"""
     
@@ -111,7 +111,7 @@ def objective(trial, X_train, y_train, X_test, y_test, num_features, num_stocks,
     
     return best_val_loss
 
-#%%
+
 def run_optimization(config_path: str):
     with open(config_path, 'r') as f:
         params = yaml.safe_load(f)

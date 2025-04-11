@@ -1,8 +1,6 @@
 # Dockerfile
-
-# Use Python 3.11 and a compatible recent Airflow version (e.g., 2.8.1)
-ARG AIRFLOW_VERSION=2.8.1 # <--- CHANGE HERE (Latest stable supporting 3.11)
-ARG PYTHON_VERSION=3.11   # <--- CHANGE HERE
+ARG AIRFLOW_VERSION=2.8.1
+ARG PYTHON_VERSION=3.11  
 FROM apache/airflow:${AIRFLOW_VERSION}-python${PYTHON_VERSION}
 
 # Set user to root temporarily to install packages
