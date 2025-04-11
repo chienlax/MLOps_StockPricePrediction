@@ -4,3 +4,5 @@
 !/.gitignore
 # And don't ignore the .gitkeep files (to keep folders in Git)
 !/.gitkeep
+
+!*.dvc

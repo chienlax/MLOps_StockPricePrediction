@@ -46,7 +46,7 @@ coverage.xml
 .pytest_cache/
 
 # Environments / Virtual Env
-.env # Exclude the .env file itself
+.env
 .venv
 env/
 venv/
