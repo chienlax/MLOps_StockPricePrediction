@@ -2007,3 +2007,59 @@
 [2025-04-20T05:32:23.298+0000] {logging_mixin.py:190} INFO - [2025-04-20T05:32:23.297+0000] {dag.py:3239} INFO - Sync 1 DAGs
 [2025-04-20T05:32:23.359+0000] {logging_mixin.py:190} INFO - [2025-04-20T05:32:23.358+0000] {dag.py:4180} INFO - Setting next_dagrun for lstm_stock_prediction_refactored to 2025-04-14 08:00:00+00:00, run_after=2025-04-21 08:00:00+00:00
 [2025-04-20T05:32:23.406+0000] {processor.py:208} INFO - Processing /opt/airflow/dags/lstm_refactored_dag.py took 0.242 seconds
+[2025-04-20T05:32:53.737+0000] {processor.py:186} INFO - Started process (PID=2964) to work on /opt/airflow/dags/lstm_refactored_dag.py
+[2025-04-20T05:32:53.740+0000] {processor.py:914} INFO - Processing file /opt/airflow/dags/lstm_refactored_dag.py for tasks to queue
+[2025-04-20T05:32:53.745+0000] {logging_mixin.py:190} INFO - [2025-04-20T05:32:53.745+0000] {dagbag.py:588} INFO - Filling up the DagBag from /opt/airflow/dags/lstm_refactored_dag.py
+[2025-04-20T05:32:53.791+0000] {processor.py:925} INFO - DAG(s) 'lstm_stock_prediction_refactored' retrieved from /opt/airflow/dags/lstm_refactored_dag.py
+[2025-04-20T05:32:53.857+0000] {logging_mixin.py:190} INFO - [2025-04-20T05:32:53.856+0000] {dag.py:3239} INFO - Sync 1 DAGs
+[2025-04-20T05:32:53.914+0000] {logging_mixin.py:190} INFO - [2025-04-20T05:32:53.913+0000] {dag.py:4180} INFO - Setting next_dagrun for lstm_stock_prediction_refactored to 2025-04-14 08:00:00+00:00, run_after=2025-04-21 08:00:00+00:00
+[2025-04-20T05:32:53.958+0000] {processor.py:208} INFO - Processing /opt/airflow/dags/lstm_refactored_dag.py took 0.238 seconds
+[2025-04-20T05:33:24.093+0000] {processor.py:186} INFO - Started process (PID=2969) to work on /opt/airflow/dags/lstm_refactored_dag.py
+[2025-04-20T05:33:24.095+0000] {processor.py:914} INFO - Processing file /opt/airflow/dags/lstm_refactored_dag.py for tasks to queue
+[2025-04-20T05:33:24.100+0000] {logging_mixin.py:190} INFO - [2025-04-20T05:33:24.099+0000] {dagbag.py:588} INFO - Filling up the DagBag from /opt/airflow/dags/lstm_refactored_dag.py
+[2025-04-20T05:33:24.156+0000] {processor.py:925} INFO - DAG(s) 'lstm_stock_prediction_refactored' retrieved from /opt/airflow/dags/lstm_refactored_dag.py
+[2025-04-20T05:33:24.241+0000] {logging_mixin.py:190} INFO - [2025-04-20T05:33:24.240+0000] {dag.py:3239} INFO - Sync 1 DAGs
+[2025-04-20T05:33:24.303+0000] {logging_mixin.py:190} INFO - [2025-04-20T05:33:24.303+0000] {dag.py:4180} INFO - Setting next_dagrun for lstm_stock_prediction_refactored to 2025-04-14 08:00:00+00:00, run_after=2025-04-21 08:00:00+00:00
+[2025-04-20T05:33:24.353+0000] {processor.py:208} INFO - Processing /opt/airflow/dags/lstm_refactored_dag.py took 0.274 seconds
+[2025-04-20T05:33:54.554+0000] {processor.py:186} INFO - Started process (PID=2982) to work on /opt/airflow/dags/lstm_refactored_dag.py
+[2025-04-20T05:33:54.558+0000] {processor.py:914} INFO - Processing file /opt/airflow/dags/lstm_refactored_dag.py for tasks to queue
+[2025-04-20T05:33:54.564+0000] {logging_mixin.py:190} INFO - [2025-04-20T05:33:54.562+0000] {dagbag.py:588} INFO - Filling up the DagBag from /opt/airflow/dags/lstm_refactored_dag.py
+[2025-04-20T05:33:54.615+0000] {processor.py:925} INFO - DAG(s) 'lstm_stock_prediction_refactored' retrieved from /opt/airflow/dags/lstm_refactored_dag.py
+[2025-04-20T05:33:54.693+0000] {logging_mixin.py:190} INFO - [2025-04-20T05:33:54.692+0000] {dag.py:3239} INFO - Sync 1 DAGs
+[2025-04-20T05:33:54.759+0000] {logging_mixin.py:190} INFO - [2025-04-20T05:33:54.758+0000] {dag.py:4180} INFO - Setting next_dagrun for lstm_stock_prediction_refactored to 2025-04-14 08:00:00+00:00, run_after=2025-04-21 08:00:00+00:00
+[2025-04-20T05:33:54.802+0000] {processor.py:208} INFO - Processing /opt/airflow/dags/lstm_refactored_dag.py took 0.262 seconds
+[2025-04-20T05:34:25.847+0000] {processor.py:186} INFO - Started process (PID=2987) to work on /opt/airflow/dags/lstm_refactored_dag.py
+[2025-04-20T05:34:25.850+0000] {processor.py:914} INFO - Processing file /opt/airflow/dags/lstm_refactored_dag.py for tasks to queue
+[2025-04-20T05:34:25.855+0000] {logging_mixin.py:190} INFO - [2025-04-20T05:34:25.854+0000] {dagbag.py:588} INFO - Filling up the DagBag from /opt/airflow/dags/lstm_refactored_dag.py
+[2025-04-20T05:34:25.912+0000] {processor.py:925} INFO - DAG(s) 'lstm_stock_prediction_refactored' retrieved from /opt/airflow/dags/lstm_refactored_dag.py
+[2025-04-20T05:34:25.972+0000] {logging_mixin.py:190} INFO - [2025-04-20T05:34:25.971+0000] {dag.py:3239} INFO - Sync 1 DAGs
+[2025-04-20T05:34:26.033+0000] {logging_mixin.py:190} INFO - [2025-04-20T05:34:26.033+0000] {dag.py:4180} INFO - Setting next_dagrun for lstm_stock_prediction_refactored to 2025-04-14 08:00:00+00:00, run_after=2025-04-21 08:00:00+00:00
+[2025-04-20T05:34:26.092+0000] {processor.py:208} INFO - Processing /opt/airflow/dags/lstm_refactored_dag.py took 0.259 seconds
+[2025-04-20T05:34:56.394+0000] {processor.py:186} INFO - Started process (PID=3000) to work on /opt/airflow/dags/lstm_refactored_dag.py
+[2025-04-20T05:34:56.397+0000] {processor.py:914} INFO - Processing file /opt/airflow/dags/lstm_refactored_dag.py for tasks to queue
+[2025-04-20T05:34:56.401+0000] {logging_mixin.py:190} INFO - [2025-04-20T05:34:56.400+0000] {dagbag.py:588} INFO - Filling up the DagBag from /opt/airflow/dags/lstm_refactored_dag.py
+[2025-04-20T05:34:56.448+0000] {processor.py:925} INFO - DAG(s) 'lstm_stock_prediction_refactored' retrieved from /opt/airflow/dags/lstm_refactored_dag.py
+[2025-04-20T05:34:56.510+0000] {logging_mixin.py:190} INFO - [2025-04-20T05:34:56.509+0000] {dag.py:3239} INFO - Sync 1 DAGs
+[2025-04-20T05:34:56.567+0000] {logging_mixin.py:190} INFO - [2025-04-20T05:34:56.567+0000] {dag.py:4180} INFO - Setting next_dagrun for lstm_stock_prediction_refactored to 2025-04-14 08:00:00+00:00, run_after=2025-04-21 08:00:00+00:00
+[2025-04-20T05:34:56.605+0000] {processor.py:208} INFO - Processing /opt/airflow/dags/lstm_refactored_dag.py took 0.223 seconds
+[2025-04-20T05:35:26.769+0000] {processor.py:186} INFO - Started process (PID=3005) to work on /opt/airflow/dags/lstm_refactored_dag.py
+[2025-04-20T05:35:26.772+0000] {processor.py:914} INFO - Processing file /opt/airflow/dags/lstm_refactored_dag.py for tasks to queue
+[2025-04-20T05:35:26.782+0000] {logging_mixin.py:190} INFO - [2025-04-20T05:35:26.778+0000] {dagbag.py:588} INFO - Filling up the DagBag from /opt/airflow/dags/lstm_refactored_dag.py
+[2025-04-20T05:35:26.887+0000] {processor.py:925} INFO - DAG(s) 'lstm_stock_prediction_refactored' retrieved from /opt/airflow/dags/lstm_refactored_dag.py
+[2025-04-20T05:35:26.971+0000] {logging_mixin.py:190} INFO - [2025-04-20T05:35:26.970+0000] {dag.py:3239} INFO - Sync 1 DAGs
+[2025-04-20T05:35:27.037+0000] {logging_mixin.py:190} INFO - [2025-04-20T05:35:27.036+0000] {dag.py:4180} INFO - Setting next_dagrun for lstm_stock_prediction_refactored to 2025-04-14 08:00:00+00:00, run_after=2025-04-21 08:00:00+00:00
+[2025-04-20T05:35:27.082+0000] {processor.py:208} INFO - Processing /opt/airflow/dags/lstm_refactored_dag.py took 0.328 seconds
+[2025-04-20T05:35:57.246+0000] {processor.py:186} INFO - Started process (PID=3018) to work on /opt/airflow/dags/lstm_refactored_dag.py
+[2025-04-20T05:35:57.249+0000] {processor.py:914} INFO - Processing file /opt/airflow/dags/lstm_refactored_dag.py for tasks to queue
+[2025-04-20T05:35:57.254+0000] {logging_mixin.py:190} INFO - [2025-04-20T05:35:57.253+0000] {dagbag.py:588} INFO - Filling up the DagBag from /opt/airflow/dags/lstm_refactored_dag.py
+[2025-04-20T05:35:57.309+0000] {processor.py:925} INFO - DAG(s) 'lstm_stock_prediction_refactored' retrieved from /opt/airflow/dags/lstm_refactored_dag.py
+[2025-04-20T05:35:57.375+0000] {logging_mixin.py:190} INFO - [2025-04-20T05:35:57.374+0000] {dag.py:3239} INFO - Sync 1 DAGs
+[2025-04-20T05:35:57.432+0000] {logging_mixin.py:190} INFO - [2025-04-20T05:35:57.432+0000] {dag.py:4180} INFO - Setting next_dagrun for lstm_stock_prediction_refactored to 2025-04-14 08:00:00+00:00, run_after=2025-04-21 08:00:00+00:00
+[2025-04-20T05:35:57.473+0000] {processor.py:208} INFO - Processing /opt/airflow/dags/lstm_refactored_dag.py took 0.242 seconds
+[2025-04-20T05:36:27.745+0000] {processor.py:186} INFO - Started process (PID=3023) to work on /opt/airflow/dags/lstm_refactored_dag.py
+[2025-04-20T05:36:27.748+0000] {processor.py:914} INFO - Processing file /opt/airflow/dags/lstm_refactored_dag.py for tasks to queue
+[2025-04-20T05:36:27.753+0000] {logging_mixin.py:190} INFO - [2025-04-20T05:36:27.752+0000] {dagbag.py:588} INFO - Filling up the DagBag from /opt/airflow/dags/lstm_refactored_dag.py
+[2025-04-20T05:36:27.816+0000] {processor.py:925} INFO - DAG(s) 'lstm_stock_prediction_refactored' retrieved from /opt/airflow/dags/lstm_refactored_dag.py
+[2025-04-20T05:36:27.887+0000] {logging_mixin.py:190} INFO - [2025-04-20T05:36:27.886+0000] {dag.py:3239} INFO - Sync 1 DAGs
+[2025-04-20T05:36:27.949+0000] {logging_mixin.py:190} INFO - [2025-04-20T05:36:27.949+0000] {dag.py:4180} INFO - Setting next_dagrun for lstm_stock_prediction_refactored to 2025-04-14 08:00:00+00:00, run_after=2025-04-21 08:00:00+00:00
+[2025-04-20T05:36:27.994+0000] {processor.py:208} INFO - Processing /opt/airflow/dags/lstm_refactored_dag.py took 0.272 seconds
