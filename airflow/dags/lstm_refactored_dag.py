@@ -15,6 +15,7 @@ MAKE_DATASET_SCRIPT = PROJECT_ROOT / 'src/data/make_dataset.py'
 BUILD_FEATURES_SCRIPT = PROJECT_ROOT / 'src/features/build_features.py'
 OPTIMIZE_SCRIPT = PROJECT_ROOT / 'src/models/optimize_hyperparams.py'
 TRAIN_SCRIPT = PROJECT_ROOT / 'src/models/train_model.py'
+PREDICT_SCRIPT = PROJECT_ROOT / 'src/models/predict_model.py'
 
 # Define default arguments
 default_args = {
@@ -62,5 +63,11 @@ with DAG (
         doc_md="Loads features, scalers, and best params. Trains the final model, evaluates, visualizes, and logs results (params, metrics, model artifact) to MLflow.",
     )
 
+    task_generate_predictions = BashOperator(
+    task_id='generate_predictions',
+    bash_command=f'python {PREDICT_SCRIPT} --config {CONFIG_PATH}',
+    doc_md="Loads model & scaler, fetches latest price/news, builds features, predicts, and saves latest_predictions.json.",
+    )
+
     # Define task dependencies
-    task_process_data >> task_build_features >> task_optimize_hyperparams >> task_train_final_model
+    task_process_data >> task_build_features >> task_optimize_hyperparams >> task_train_final_model >> task_generate_predictions
