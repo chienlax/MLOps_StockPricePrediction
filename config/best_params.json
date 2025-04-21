@@ -1,0 +1,8 @@
+{
+    "batch_size": 48,
+    "hidden_size": 224,
+    "num_layers": 1,
+    "dropout_rate": 0.5,
+    "learning_rate": 0.002579368936780867,
+    "model_type": "lstm_cross_attention"
+}

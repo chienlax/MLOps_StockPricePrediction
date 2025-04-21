@@ -1,0 +1,203 @@
+[2025-04-11T07:56:36.607+0000] {local_task_job_runner.py:123} INFO - ::group::Pre task execution logs
+[2025-04-11T07:56:36.621+0000] {taskinstance.py:2614} INFO - Dependencies all met for dep_context=non-requeueable deps ti=<TaskInstance: lstm_stock_prediction_refactored.train_final_model manual__2025-04-11T07:34:50.523738+00:00 [queued]>
+[2025-04-11T07:56:36.627+0000] {taskinstance.py:2614} INFO - Dependencies all met for dep_context=requeueable deps ti=<TaskInstance: lstm_stock_prediction_refactored.train_final_model manual__2025-04-11T07:34:50.523738+00:00 [queued]>
+[2025-04-11T07:56:36.628+0000] {taskinstance.py:2867} INFO - Starting attempt 3 of 4
+[2025-04-11T07:56:36.640+0000] {taskinstance.py:2890} INFO - Executing <Task(BashOperator): train_final_model> on 2025-04-11 07:34:50.523738+00:00
+[2025-04-11T07:56:36.645+0000] {standard_task_runner.py:72} INFO - Started process 782 to run task
+[2025-04-11T07:56:36.647+0000] {standard_task_runner.py:104} INFO - Running: ['***', 'tasks', 'run', 'lstm_stock_prediction_refactored', 'train_final_model', 'manual__2025-04-11T07:34:50.523738+00:00', '--job-id', '26', '--raw', '--subdir', 'DAGS_FOLDER/lstm_refactored_dag.py', '--cfg-path', '/tmp/tmp2w6r_eex']
+[2025-04-11T07:56:36.651+0000] {standard_task_runner.py:105} INFO - Job 26: Subtask train_final_model
+[2025-04-11T07:56:36.693+0000] {task_command.py:467} INFO - Running <TaskInstance: lstm_stock_prediction_refactored.train_final_model manual__2025-04-11T07:34:50.523738+00:00 [running]> on host e3a30e77acd1
+[2025-04-11T07:56:36.767+0000] {taskinstance.py:3134} INFO - Exporting env vars: AIRFLOW_CTX_DAG_OWNER='***_team' AIRFLOW_CTX_DAG_ID='lstm_stock_prediction_refactored' AIRFLOW_CTX_TASK_ID='train_final_model' AIRFLOW_CTX_EXECUTION_DATE='2025-04-11T07:34:50.523738+00:00' AIRFLOW_CTX_TRY_NUMBER='3' AIRFLOW_CTX_DAG_RUN_ID='manual__2025-04-11T07:34:50.523738+00:00'
+[2025-04-11T07:56:36.768+0000] {taskinstance.py:732} INFO - ::endgroup::
+[2025-04-11T07:56:36.782+0000] {subprocess.py:78} INFO - Tmp dir root location: /tmp
+[2025-04-11T07:56:36.784+0000] {subprocess.py:88} INFO - Running command: ['/usr/bin/bash', '-c', 'python /opt/***/src/models/train_model.py --config /opt/***/config/params.yaml']
+[2025-04-11T07:56:36.792+0000] {subprocess.py:99} INFO - Output:
+[2025-04-11T08:00:47.844+0000] {subprocess.py:106} INFO - Using device: cpu
+[2025-04-11T08:00:47.847+0000] {subprocess.py:106} INFO - --- Loading Scaled Data from /opt/***/data/features/split_scaled_data.npz ---
+[2025-04-11T08:00:47.852+0000] {subprocess.py:106} INFO - --- Finished Loading Scaled Data ---
+[2025-04-11T08:00:47.853+0000] {subprocess.py:106} INFO - --- Loading Scalers from /opt/***/data/processed/scalers.pkl ---
+[2025-04-11T08:00:47.854+0000] {subprocess.py:106} INFO - --- Finished Loading Scalers ---
+[2025-04-11T08:00:47.854+0000] {subprocess.py:106} INFO - --- Loading Tickers from /opt/***/data/processed/all_processed_data.npz ---
+[2025-04-11T08:00:47.855+0000] {subprocess.py:106} INFO - Tickers: ['AAPL', 'MA', 'CSCO', 'MSFT', 'AMZN', 'GOOG', 'IBM']
+[2025-04-11T08:00:47.856+0000] {subprocess.py:106} INFO - --- Finished Loading Tickers ---
+[2025-04-11T08:00:47.856+0000] {subprocess.py:106} INFO - --- Loading Best Hyperparameters from /opt/***/config/best_params.json ---
+[2025-04-11T08:00:47.857+0000] {subprocess.py:106} INFO - Best parameters loaded: {'batch_size': 80, 'hidden_size': 64, 'num_layers': 2, 'dropout_rate': 0.4, 'learning_rate': 0.00010587273351810358, 'model_type': 'lstm_cross_attention'}
+[2025-04-11T08:00:47.857+0000] {subprocess.py:106} INFO - --- Finished Loading Best Hyperparameters ---
+[2025-04-11T08:00:47.862+0000] {subprocess.py:106} INFO - --- Setting MLflow Experiment: Stock_Price_Prediction_LSTM_Refactored ---
+[2025-04-11T08:00:47.868+0000] {subprocess.py:106} INFO - Using MLflow Tracking URI: http://localhost:5001/
+[2025-04-11T08:00:47.870+0000] {subprocess.py:106} INFO - Traceback (most recent call last):
+[2025-04-11T08:00:47.874+0000] {subprocess.py:106} INFO -   File "/home/***/.local/lib/python3.11/site-packages/urllib3/connection.py", line 198, in _new_conn
+[2025-04-11T08:00:47.875+0000] {subprocess.py:106} INFO -     sock = connection.create_connection(
+[2025-04-11T08:00:47.875+0000] {subprocess.py:106} INFO -            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[2025-04-11T08:00:47.877+0000] {subprocess.py:106} INFO -   File "/home/***/.local/lib/python3.11/site-packages/urllib3/util/connection.py", line 85, in create_connection
+[2025-04-11T08:00:47.878+0000] {subprocess.py:106} INFO -     raise err
+[2025-04-11T08:00:47.879+0000] {subprocess.py:106} INFO -   File "/home/***/.local/lib/python3.11/site-packages/urllib3/util/connection.py", line 73, in create_connection
+[2025-04-11T08:00:47.879+0000] {subprocess.py:106} INFO -     sock.connect(sa)
+[2025-04-11T08:00:47.880+0000] {subprocess.py:106} INFO - ConnectionRefusedError: [Errno 111] Connection refused
+[2025-04-11T08:00:47.880+0000] {subprocess.py:106} INFO - 
+[2025-04-11T08:00:47.881+0000] {subprocess.py:106} INFO - The above exception was the direct cause of the following exception:
+[2025-04-11T08:00:47.881+0000] {subprocess.py:106} INFO - 
+[2025-04-11T08:00:47.882+0000] {subprocess.py:106} INFO - Traceback (most recent call last):
+[2025-04-11T08:00:47.882+0000] {subprocess.py:106} INFO -   File "/home/***/.local/lib/python3.11/site-packages/urllib3/connectionpool.py", line 787, in urlopen
+[2025-04-11T08:00:47.882+0000] {subprocess.py:106} INFO -     response = self._make_request(
+[2025-04-11T08:00:47.883+0000] {subprocess.py:106} INFO -                ^^^^^^^^^^^^^^^^^^^
+[2025-04-11T08:00:47.883+0000] {subprocess.py:106} INFO -   File "/home/***/.local/lib/python3.11/site-packages/urllib3/connectionpool.py", line 493, in _make_request
+[2025-04-11T08:00:47.884+0000] {subprocess.py:106} INFO -     conn.request(
+[2025-04-11T08:00:47.885+0000] {subprocess.py:106} INFO -   File "/home/***/.local/lib/python3.11/site-packages/urllib3/connection.py", line 445, in request
+[2025-04-11T08:00:47.885+0000] {subprocess.py:106} INFO -     self.endheaders()
+[2025-04-11T08:00:47.885+0000] {subprocess.py:106} INFO -   File "/usr/local/lib/python3.11/http/client.py", line 1293, in endheaders
+[2025-04-11T08:00:47.886+0000] {subprocess.py:106} INFO -     self._send_output(message_body, encode_chunked=encode_chunked)
+[2025-04-11T08:00:47.886+0000] {subprocess.py:106} INFO -   File "/usr/local/lib/python3.11/http/client.py", line 1052, in _send_output
+[2025-04-11T08:00:47.887+0000] {subprocess.py:106} INFO -     self.send(msg)
+[2025-04-11T08:00:47.887+0000] {subprocess.py:106} INFO -   File "/usr/local/lib/python3.11/http/client.py", line 990, in send
+[2025-04-11T08:00:47.888+0000] {subprocess.py:106} INFO -     self.connect()
+[2025-04-11T08:00:47.888+0000] {subprocess.py:106} INFO -   File "/home/***/.local/lib/python3.11/site-packages/urllib3/connection.py", line 276, in connect
+[2025-04-11T08:00:47.889+0000] {subprocess.py:106} INFO -     self.sock = self._new_conn()
+[2025-04-11T08:00:47.889+0000] {subprocess.py:106} INFO -                 ^^^^^^^^^^^^^^^^
+[2025-04-11T08:00:47.890+0000] {subprocess.py:106} INFO -   File "/home/***/.local/lib/python3.11/site-packages/urllib3/connection.py", line 213, in _new_conn
+[2025-04-11T08:00:47.893+0000] {subprocess.py:106} INFO -     raise NewConnectionError(
+[2025-04-11T08:00:47.898+0000] {subprocess.py:106} INFO - urllib3.exceptions.NewConnectionError: <urllib3.connection.HTTPConnection object at 0x7fda92508c90>: Failed to establish a new connection: [Errno 111] Connection refused
+[2025-04-11T08:00:47.900+0000] {subprocess.py:106} INFO - 
+[2025-04-11T08:00:47.903+0000] {subprocess.py:106} INFO - The above exception was the direct cause of the following exception:
+[2025-04-11T08:00:47.904+0000] {subprocess.py:106} INFO - 
+[2025-04-11T08:00:47.905+0000] {subprocess.py:106} INFO - Traceback (most recent call last):
+[2025-04-11T08:00:47.906+0000] {subprocess.py:106} INFO -   File "/home/***/.local/lib/python3.11/site-packages/requests/adapters.py", line 667, in send
+[2025-04-11T08:00:47.907+0000] {subprocess.py:106} INFO -     resp = conn.urlopen(
+[2025-04-11T08:00:47.908+0000] {subprocess.py:106} INFO -            ^^^^^^^^^^^^^
+[2025-04-11T08:00:47.908+0000] {subprocess.py:106} INFO -   File "/home/***/.local/lib/python3.11/site-packages/urllib3/connectionpool.py", line 871, in urlopen
+[2025-04-11T08:00:47.909+0000] {subprocess.py:106} INFO -     return self.urlopen(
+[2025-04-11T08:00:47.909+0000] {subprocess.py:106} INFO -            ^^^^^^^^^^^^^
+[2025-04-11T08:00:47.910+0000] {subprocess.py:106} INFO -   File "/home/***/.local/lib/python3.11/site-packages/urllib3/connectionpool.py", line 871, in urlopen
+[2025-04-11T08:00:47.911+0000] {subprocess.py:106} INFO -     return self.urlopen(
+[2025-04-11T08:00:47.911+0000] {subprocess.py:106} INFO -            ^^^^^^^^^^^^^
+[2025-04-11T08:00:47.912+0000] {subprocess.py:106} INFO -   File "/home/***/.local/lib/python3.11/site-packages/urllib3/connectionpool.py", line 871, in urlopen
+[2025-04-11T08:00:47.913+0000] {subprocess.py:106} INFO -     return self.urlopen(
+[2025-04-11T08:00:47.913+0000] {subprocess.py:106} INFO -            ^^^^^^^^^^^^^
+[2025-04-11T08:00:47.914+0000] {subprocess.py:106} INFO -   [Previous line repeated 4 more times]
+[2025-04-11T08:00:47.915+0000] {subprocess.py:106} INFO -   File "/home/***/.local/lib/python3.11/site-packages/urllib3/connectionpool.py", line 841, in urlopen
+[2025-04-11T08:00:47.915+0000] {subprocess.py:106} INFO -     retries = retries.increment(
+[2025-04-11T08:00:47.916+0000] {subprocess.py:106} INFO -               ^^^^^^^^^^^^^^^^^^
+[2025-04-11T08:00:47.916+0000] {subprocess.py:106} INFO -   File "/home/***/.local/lib/python3.11/site-packages/urllib3/util/retry.py", line 519, in increment
+[2025-04-11T08:00:47.917+0000] {subprocess.py:106} INFO -     raise MaxRetryError(_pool, url, reason) from reason  # type: ignore[arg-type]
+[2025-04-11T08:00:47.917+0000] {subprocess.py:106} INFO -     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[2025-04-11T08:00:47.918+0000] {subprocess.py:106} INFO - urllib3.exceptions.MaxRetryError: HTTPConnectionPool(host='localhost', port=5001): Max retries exceeded with url: /api/2.0/mlflow/experiments/get-by-name?experiment_name=Stock_Price_Prediction_LSTM_Refactored (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7fda92508c90>: Failed to establish a new connection: [Errno 111] Connection refused'))
+[2025-04-11T08:00:47.918+0000] {subprocess.py:106} INFO - 
+[2025-04-11T08:00:47.919+0000] {subprocess.py:106} INFO - During handling of the above exception, another exception occurred:
+[2025-04-11T08:00:47.919+0000] {subprocess.py:106} INFO - 
+[2025-04-11T08:00:47.920+0000] {subprocess.py:106} INFO - Traceback (most recent call last):
+[2025-04-11T08:00:47.920+0000] {subprocess.py:106} INFO -   File "/home/***/.local/lib/python3.11/site-packages/mlflow/utils/rest_utils.py", line 181, in http_request
+[2025-04-11T08:00:47.920+0000] {subprocess.py:106} INFO -     return _get_http_response_with_retries(
+[2025-04-11T08:00:47.921+0000] {subprocess.py:106} INFO -            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[2025-04-11T08:00:47.922+0000] {subprocess.py:106} INFO -   File "/home/***/.local/lib/python3.11/site-packages/mlflow/utils/request_utils.py", line 237, in _get_http_response_with_retries
+[2025-04-11T08:00:47.922+0000] {subprocess.py:106} INFO -     return session.request(method, url, allow_redirects=allow_redirects, **kwargs)
+[2025-04-11T08:00:47.923+0000] {subprocess.py:106} INFO -            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[2025-04-11T08:00:47.923+0000] {subprocess.py:106} INFO -   File "/home/***/.local/lib/python3.11/site-packages/requests/sessions.py", line 589, in request
+[2025-04-11T08:00:47.923+0000] {subprocess.py:106} INFO -     resp = self.send(prep, **send_kwargs)
+[2025-04-11T08:00:47.924+0000] {subprocess.py:106} INFO -            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[2025-04-11T08:00:47.924+0000] {subprocess.py:106} INFO -   File "/home/***/.local/lib/python3.11/site-packages/requests/sessions.py", line 703, in send
+[2025-04-11T08:00:47.925+0000] {subprocess.py:106} INFO -     r = adapter.send(request, **kwargs)
+[2025-04-11T08:00:47.925+0000] {subprocess.py:106} INFO -         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[2025-04-11T08:00:47.926+0000] {subprocess.py:106} INFO -   File "/home/***/.local/lib/python3.11/site-packages/requests/adapters.py", line 700, in send
+[2025-04-11T08:00:47.926+0000] {subprocess.py:106} INFO -     raise ConnectionError(e, request=request)
+[2025-04-11T08:00:47.927+0000] {subprocess.py:106} INFO - requests.exceptions.ConnectionError: HTTPConnectionPool(host='localhost', port=5001): Max retries exceeded with url: /api/2.0/mlflow/experiments/get-by-name?experiment_name=Stock_Price_Prediction_LSTM_Refactored (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7fda92508c90>: Failed to establish a new connection: [Errno 111] Connection refused'))
+[2025-04-11T08:00:47.927+0000] {subprocess.py:106} INFO - 
+[2025-04-11T08:00:47.927+0000] {subprocess.py:106} INFO - During handling of the above exception, another exception occurred:
+[2025-04-11T08:00:47.928+0000] {subprocess.py:106} INFO - 
+[2025-04-11T08:00:47.929+0000] {subprocess.py:106} INFO - Traceback (most recent call last):
+[2025-04-11T08:00:47.929+0000] {subprocess.py:106} INFO -   File "/opt/***/src/models/train_model.py", line 237, in <module>
+[2025-04-11T08:00:47.930+0000] {subprocess.py:106} INFO -     run_training(args.config)
+[2025-04-11T08:00:47.931+0000] {subprocess.py:106} INFO -   File "/opt/***/src/models/train_model.py", line 211, in run_training
+[2025-04-11T08:00:47.932+0000] {subprocess.py:106} INFO -     mlflow.set_experiment(mlflow_experiment)
+[2025-04-11T08:00:47.932+0000] {subprocess.py:106} INFO -   File "/home/***/.local/lib/python3.11/site-packages/mlflow/tracking/fluent.py", line 157, in set_experiment
+[2025-04-11T08:00:47.933+0000] {subprocess.py:106} INFO -     experiment = client.get_experiment_by_name(experiment_name)
+[2025-04-11T08:00:47.933+0000] {subprocess.py:106} INFO -                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[2025-04-11T08:00:47.933+0000] {subprocess.py:106} INFO -   File "/home/***/.local/lib/python3.11/site-packages/mlflow/tracking/client.py", line 1698, in get_experiment_by_name
+[2025-04-11T08:00:47.934+0000] {subprocess.py:106} INFO -     return self._tracking_client.get_experiment_by_name(name)
+[2025-04-11T08:00:47.934+0000] {subprocess.py:106} INFO -            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[2025-04-11T08:00:47.935+0000] {subprocess.py:106} INFO -   File "/home/***/.local/lib/python3.11/site-packages/mlflow/tracking/_tracking_service/client.py", line 586, in get_experiment_by_name
+[2025-04-11T08:00:47.935+0000] {subprocess.py:106} INFO -     return self.store.get_experiment_by_name(name)
+[2025-04-11T08:00:47.935+0000] {subprocess.py:106} INFO -            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[2025-04-11T08:00:47.936+0000] {subprocess.py:106} INFO -   File "/home/***/.local/lib/python3.11/site-packages/mlflow/store/tracking/rest_store.py", line 641, in get_experiment_by_name
+[2025-04-11T08:00:47.936+0000] {subprocess.py:106} INFO -     response_proto = self._call_endpoint(GetExperimentByName, req_body)
+[2025-04-11T08:00:47.937+0000] {subprocess.py:106} INFO -                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[2025-04-11T08:00:47.937+0000] {subprocess.py:106} INFO -   File "/home/***/.local/lib/python3.11/site-packages/mlflow/store/tracking/rest_store.py", line 90, in _call_endpoint
+[2025-04-11T08:00:47.938+0000] {subprocess.py:106} INFO -     return call_endpoint(self.get_host_creds(), endpoint, method, json_body, response_proto)
+[2025-04-11T08:00:47.938+0000] {subprocess.py:106} INFO -            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[2025-04-11T08:00:47.938+0000] {subprocess.py:106} INFO -   File "/home/***/.local/lib/python3.11/site-packages/mlflow/utils/rest_utils.py", line 387, in call_endpoint
+[2025-04-11T08:00:47.939+0000] {subprocess.py:106} INFO -     response = http_request(**call_kwargs)
+[2025-04-11T08:00:47.939+0000] {subprocess.py:106} INFO -                ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[2025-04-11T08:00:47.939+0000] {subprocess.py:106} INFO -   File "/home/***/.local/lib/python3.11/site-packages/mlflow/utils/rest_utils.py", line 204, in http_request
+[2025-04-11T08:00:47.940+0000] {subprocess.py:106} INFO -     raise MlflowException(f"API request to {url} failed with exception {e}")
+[2025-04-11T08:00:47.940+0000] {subprocess.py:106} INFO - mlflow.exceptions.MlflowException: API request to http://localhost:5001/api/2.0/mlflow/experiments/get-by-name failed with exception HTTPConnectionPool(host='localhost', port=5001): Max retries exceeded with url: /api/2.0/mlflow/experiments/get-by-name?experiment_name=Stock_Price_Prediction_LSTM_Refactored (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7fda92508c90>: Failed to establish a new connection: [Errno 111] Connection refused'))
+[2025-04-11T08:00:48.655+0000] {subprocess.py:110} INFO - Command exited with return code 1
+[2025-04-11T08:00:48.663+0000] {taskinstance.py:3313} ERROR - Task failed with exception
+Traceback (most recent call last):
+  File "/home/airflow/.local/lib/python3.11/site-packages/airflow/models/taskinstance.py", line 768, in _execute_task
+    result = _execute_callable(context=context, **execute_callable_kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/airflow/.local/lib/python3.11/site-packages/airflow/models/taskinstance.py", line 734, in _execute_callable
+    return ExecutionCallableRunner(
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/airflow/.local/lib/python3.11/site-packages/airflow/utils/operator_helpers.py", line 252, in run
+    return self.func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/airflow/.local/lib/python3.11/site-packages/airflow/models/baseoperator.py", line 424, in wrapper
+    return func(self, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/airflow/.local/lib/python3.11/site-packages/airflow/operators/bash.py", line 276, in execute
+    raise AirflowException(
+airflow.exceptions.AirflowException: Bash command failed. The command returned a non-zero exit code 1.
+[2025-04-11T08:00:48.670+0000] {taskinstance.py:1226} INFO - Marking task as UP_FOR_RETRY. dag_id=lstm_stock_prediction_refactored, task_id=train_final_model, run_id=manual__2025-04-11T07:34:50.523738+00:00, execution_date=20250411T073450, start_date=20250411T075636, end_date=20250411T080048
+[2025-04-11T08:00:48.687+0000] {taskinstance.py:341} INFO - ::group::Post task execution logs
+[2025-04-11T08:00:48.689+0000] {standard_task_runner.py:124} ERROR - Failed to execute job 26 for task train_final_model (Bash command failed. The command returned a non-zero exit code 1.; 782)
+Traceback (most recent call last):
+  File "/home/airflow/.local/lib/python3.11/site-packages/airflow/task/task_runner/standard_task_runner.py", line 117, in _start_by_fork
+    ret = args.func(args, dag=self.dag)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/airflow/.local/lib/python3.11/site-packages/airflow/cli/cli_config.py", line 49, in command
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/airflow/.local/lib/python3.11/site-packages/airflow/utils/cli.py", line 116, in wrapper
+    return f(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^
+  File "/home/airflow/.local/lib/python3.11/site-packages/airflow/cli/commands/task_command.py", line 483, in task_run
+    task_return_code = _run_task_by_selected_method(args, _dag, ti)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/airflow/.local/lib/python3.11/site-packages/airflow/cli/commands/task_command.py", line 256, in _run_task_by_selected_method
+    return _run_raw_task(args, ti)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/airflow/.local/lib/python3.11/site-packages/airflow/cli/commands/task_command.py", line 341, in _run_raw_task
+    return ti._run_raw_task(
+           ^^^^^^^^^^^^^^^^^
+  File "/home/airflow/.local/lib/python3.11/site-packages/airflow/utils/session.py", line 97, in wrapper
+    return func(*args, session=session, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/airflow/.local/lib/python3.11/site-packages/airflow/models/taskinstance.py", line 3006, in _run_raw_task
+    return _run_raw_task(
+           ^^^^^^^^^^^^^^
+  File "/home/airflow/.local/lib/python3.11/site-packages/airflow/models/taskinstance.py", line 274, in _run_raw_task
+    TaskInstance._execute_task_with_callbacks(
+  File "/home/airflow/.local/lib/python3.11/site-packages/airflow/models/taskinstance.py", line 3161, in _execute_task_with_callbacks
+    result = self._execute_task(context, task_orig)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/airflow/.local/lib/python3.11/site-packages/airflow/models/taskinstance.py", line 3185, in _execute_task
+    return _execute_task(self, context, task_orig)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/airflow/.local/lib/python3.11/site-packages/airflow/models/taskinstance.py", line 768, in _execute_task
+    result = _execute_callable(context=context, **execute_callable_kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/airflow/.local/lib/python3.11/site-packages/airflow/models/taskinstance.py", line 734, in _execute_callable
+    return ExecutionCallableRunner(
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/airflow/.local/lib/python3.11/site-packages/airflow/utils/operator_helpers.py", line 252, in run
+    return self.func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/airflow/.local/lib/python3.11/site-packages/airflow/models/baseoperator.py", line 424, in wrapper
+    return func(self, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/airflow/.local/lib/python3.11/site-packages/airflow/operators/bash.py", line 276, in execute
+    raise AirflowException(
+airflow.exceptions.AirflowException: Bash command failed. The command returned a non-zero exit code 1.
+[2025-04-11T08:00:48.711+0000] {local_task_job_runner.py:266} INFO - Task exited with return code 1
+[2025-04-11T08:00:48.726+0000] {taskinstance.py:3901} INFO - 0 downstream tasks scheduled from follow-on schedule check
+[2025-04-11T08:00:48.738+0000] {local_task_job_runner.py:245} INFO - ::endgroup::

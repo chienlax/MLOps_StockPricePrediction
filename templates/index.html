@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stock Prediction Dashboard</title>
+    <!-- Load Chart.js từ CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Load CSS -->
+    <link rel="stylesheet" href="/static/css/styles.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Stock Prediction Dashboard</h1>
+
+        <!-- Phần hiển thị dự đoán mới nhất -->
+        <section>
+            <h2>Latest Predictions</h2>
+            <table id="latest-predictions-table">
+                <thead>
+                    <tr>
+                        <th>Ticker</th>
+                        <th>Predicted Price</th>
+                        <th>Date</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <!-- Dữ liệu sẽ được điền bằng JavaScript -->
+                </tbody>
+            </table>
+        </section>
+
+        <!-- Phần hiển thị biểu đồ lịch sử -->
+        <section>
+            <h2>Historical Predictions</h2>
+            <div class="chart-controls">
+                <label for="ticker-select">Select Ticker:</label>
+                <select id="ticker-select">
+                    <!-- Các ticker sẽ được điền bằng JavaScript -->
+                </select>
+                <button onclick="updateChart()">Update Chart</button>
+            </div>
+            <canvas id="historical-chart" width="400" height="200"></canvas>
+        </section>
+    </div>
+
+    <!-- Load JavaScript -->
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
