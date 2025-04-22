@@ -82,8 +82,8 @@ services:
 
   frontend:
     build:
-      context: ./frontend
-      dockerfile: ../Dockerfile.frontend
+      context: .
+      dockerfile: ./Dockerfile.frontend
     container_name: stockpred-frontend
     ports:
       - "8000:80"

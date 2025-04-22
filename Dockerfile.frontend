@@ -1,16 +1,21 @@
-# Dockerfile.frontend
-
 FROM python:3.11-slim
-
 WORKDIR /app
 
-# Copy toàn bộ mã nguồn frontend
-COPY ./frontend /app
+# 1) Copy code API
+COPY src/api    ./api
 
-# Cài đặt các gói cần thiết
+# 2) Copy các template (Jinja2)
+COPY templates  ./templates
+
+# 3) Copy frontend static files vào templates/static
+#    (nếu bạn muốn giữ cấu trúc như code đang mount)
+COPY frontend   ./templates/static
+
+# Cài FastAPI + Uvicorn + Jinja2
 RUN pip install --no-cache-dir fastapi uvicorn jinja2
 
-# Expose port
-EXPOSE 8000
+# Container lắng nghe port 80 (Compose map 8000:80)
+EXPOSE 80
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Khởi Uvicorn trỏ vào module api.main
+CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "80"]

@@ -129,5 +129,5 @@ def main():
         json.dump(payload, f, indent=2)
     print(f"Saved historical predictions to {hist_file}")
 
-if _name_ == '_main_':
+if __name__ == '__main__':
     main()

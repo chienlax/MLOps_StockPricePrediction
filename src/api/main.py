@@ -103,3 +103,4 @@ async def get_dashboard(request: Request):
     Giao diện chính Dashboard
     """
     return templates.TemplateResponse("index.html", {"request": request})
+#uvicorn src.api.main:app --reload
