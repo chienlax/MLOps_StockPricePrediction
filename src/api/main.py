@@ -1,11 +1,7 @@
-<<<<<<< HEAD
-from fastapi import FastAPI, HTTPException
-=======
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse
->>>>>>> f338dc42922993d8fc07742fe42f724531905844
 from pathlib import Path
 import json
 from datetime import date
@@ -16,16 +12,6 @@ app = FastAPI(
     version="1.0.0"
 )
 
-<<<<<<< HEAD
-# Path to JSON predictions file (relative to project root)
-PREDICTION_FILE_PATH = Path("data/predictions/latest_predictions.json")
-
-
-def load_predictions():
-    """
-    Load the predictions JSON file and return a list of prediction entries.
-    Each entry is a dict: {"ticker": str, "predicted_price": float, "date": str}
-=======
 # Các đường dẫn dữ liệu
 PREDICTION_FILE_PATH = Path("data/predictions/latest_predictions.json")
 HISTORICAL_DIR = Path("data/predictions/historical")
@@ -42,7 +28,6 @@ def load_predictions():
     """
     Đọc file latest_predictions.json và trả về danh sách dự đoán dạng:
     [{"ticker": str, "predicted_price": float, "date": str}, ...]
->>>>>>> f338dc42922993d8fc07742fe42f724531905844
     """
     if not PREDICTION_FILE_PATH.exists():
         raise HTTPException(status_code=404, detail="Prediction file not found")
@@ -50,12 +35,7 @@ def load_predictions():
         with open(PREDICTION_FILE_PATH, "r") as f:
             data = json.load(f)
 
-<<<<<<< HEAD
-        # New format: {"date": "2025-04-20", "predictions": {"AAPL": 215.92, ...}}
-        if isinstance(data, dict) and "predictions" in data and isinstance(data["predictions"], dict):
-=======
         if isinstance(data, dict) and "predictions" in data:
->>>>>>> f338dc42922993d8fc07742fe42f724531905844
             date_str = data.get("date", date.today().isoformat())
             predictions_dict = data["predictions"]
             predictions_list = [
@@ -64,16 +44,6 @@ def load_predictions():
             ]
             return predictions_list
 
-<<<<<<< HEAD
-        raise ValueError("Unexpected JSON format: expected a dictionary with 'predictions' key")
-    except json.JSONDecodeError:
-        raise HTTPException(status_code=500, detail="Error parsing prediction file")
-    except ValueError as ve:
-        raise HTTPException(status_code=500, detail=str(ve))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-=======
         raise ValueError("Invalid format in latest_predictions.json")
     except json.JSONDecodeError:
         raise HTTPException(status_code=500, detail="Error parsing prediction file")
@@ -108,33 +78,15 @@ def load_historical_predictions_for_ticker(ticker: str):
     return results
 
 # ------------------ API ------------------
->>>>>>> f338dc42922993d8fc07742fe42f724531905844
 
 @app.get("/predictions/latest")
 async def get_latest_predictions():
     """
-<<<<<<< HEAD
-    Return all latest predictions as a list.
-=======
     API trả về các dự đoán mới nhất từ latest_predictions.json
->>>>>>> f338dc42922993d8fc07742fe42f724531905844
     """
     predictions = load_predictions()
     return {"status": "success", "data": predictions}
 
-<<<<<<< HEAD
-
-@app.get("/predictions/historical/{ticker}")
-async def get_historical_predictions(ticker: str):
-    """
-    Return predictions filtered by ticker (case-insensitive).
-    """
-    predictions = load_predictions()
-    filtered = [item for item in predictions if item.get("ticker", "").lower() == ticker.lower()]
-    if not filtered:
-        raise HTTPException(status_code=404, detail=f"No predictions found for ticker: {ticker}")
-    return {"status": "success", "ticker": ticker.upper(), "data": filtered}
-=======
 @app.get("/predictions/historical/{ticker}")
 async def get_historical_predictions(ticker: str):
     """
@@ -152,4 +104,3 @@ async def get_dashboard(request: Request):
     """
     return templates.TemplateResponse("index.html", {"request": request})
 #uvicorn src.api.main:app --reload
->>>>>>> f338dc42922993d8fc07742fe42f724531905844
