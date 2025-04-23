@@ -95,3 +95,5 @@ Thumbs.db
 
 # Docker cache/build related
 docker-compose.override.ymlairflow/logs/
+
+airflow/logs/
