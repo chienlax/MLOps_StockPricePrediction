@@ -1,0 +1,85 @@
+[2025-04-12T04:33:27.120+0000] {local_task_job_runner.py:123} INFO - ::group::Pre task execution logs
+[2025-04-12T04:33:27.132+0000] {taskinstance.py:2614} INFO - Dependencies all met for dep_context=non-requeueable deps ti=<TaskInstance: lstm_stock_prediction_refactored.process_data manual__2025-04-12T04:33:26.024226+00:00 [queued]>
+[2025-04-12T04:33:27.138+0000] {taskinstance.py:2614} INFO - Dependencies all met for dep_context=requeueable deps ti=<TaskInstance: lstm_stock_prediction_refactored.process_data manual__2025-04-12T04:33:26.024226+00:00 [queued]>
+[2025-04-12T04:33:27.139+0000] {taskinstance.py:2867} INFO - Starting attempt 1 of 2
+[2025-04-12T04:33:27.152+0000] {taskinstance.py:2890} INFO - Executing <Task(BashOperator): process_data> on 2025-04-12 04:33:26.024226+00:00
+[2025-04-12T04:33:27.160+0000] {standard_task_runner.py:72} INFO - Started process 3744 to run task
+[2025-04-12T04:33:27.163+0000] {standard_task_runner.py:104} INFO - Running: ['***', 'tasks', 'run', 'lstm_stock_prediction_refactored', 'process_data', 'manual__2025-04-12T04:33:26.024226+00:00', '--job-id', '83', '--raw', '--subdir', 'DAGS_FOLDER/lstm_refactored_dag.py', '--cfg-path', '/tmp/tmpe3_c_qpe']
+[2025-04-12T04:33:27.166+0000] {standard_task_runner.py:105} INFO - Job 83: Subtask process_data
+[2025-04-12T04:33:27.210+0000] {task_command.py:467} INFO - Running <TaskInstance: lstm_stock_prediction_refactored.process_data manual__2025-04-12T04:33:26.024226+00:00 [running]> on host 38686bf18545
+[2025-04-12T04:33:27.283+0000] {taskinstance.py:3134} INFO - Exporting env vars: AIRFLOW_CTX_DAG_OWNER='***_team' AIRFLOW_CTX_DAG_ID='lstm_stock_prediction_refactored' AIRFLOW_CTX_TASK_ID='process_data' AIRFLOW_CTX_EXECUTION_DATE='2025-04-12T04:33:26.024226+00:00' AIRFLOW_CTX_TRY_NUMBER='1' AIRFLOW_CTX_DAG_RUN_ID='manual__2025-04-12T04:33:26.024226+00:00'
+[2025-04-12T04:33:27.284+0000] {taskinstance.py:732} INFO - ::endgroup::
+[2025-04-12T04:33:27.296+0000] {subprocess.py:78} INFO - Tmp dir root location: /tmp
+[2025-04-12T04:33:27.298+0000] {subprocess.py:88} INFO - Running command: ['/usr/bin/bash', '-c', 'python /opt/***/src/data/make_dataset.py --config /opt/***/config/params.yaml']
+[2025-04-12T04:33:27.307+0000] {subprocess.py:99} INFO - Output:
+[2025-04-12T04:33:27.980+0000] {subprocess.py:106} INFO - 2025-04-12 04:33:27,980 - __main__ - INFO - Starting data processing script with config: /opt/***/config/params.yaml
+[2025-04-12T04:33:27.985+0000] {subprocess.py:106} INFO - 2025-04-12 04:33:27,985 - __main__ - INFO - Raw data directory: /opt/***/data/raw
+[2025-04-12T04:33:27.986+0000] {subprocess.py:106} INFO - 2025-04-12 04:33:27,985 - __main__ - INFO - Processed data output path: /opt/***/data/processed/all_processed_data.npz
+[2025-04-12T04:33:27.986+0000] {subprocess.py:106} INFO - 2025-04-12 04:33:27,985 - __main__ - INFO - --- Starting Data Loading ---
+[2025-04-12T04:33:27.987+0000] {subprocess.py:106} INFO - 2025-04-12 04:33:27,986 - __main__ - INFO - Attempting to use RELATIVE output dir: /opt/***/data/raw
+[2025-04-12T04:33:27.988+0000] {subprocess.py:106} INFO - 2025-04-12 04:33:27,986 - __main__ - INFO - Attempting to use ABSOLUTE output dir: /opt/***/data/raw
+[2025-04-12T04:33:27.989+0000] {subprocess.py:106} INFO - 2025-04-12 04:33:27,986 - __main__ - INFO - Current Working Directory inside container: /tmp/***tmpr7zimne9
+[2025-04-12T04:33:27.990+0000] {subprocess.py:106} INFO - 2025-04-12 04:33:27,987 - __main__ - INFO - Attempting to create directory: /opt/***/data/raw
+[2025-04-12T04:33:27.992+0000] {subprocess.py:106} INFO - 2025-04-12 04:33:27,987 - __main__ - INFO - Successfully called mkdir for: /opt/***/data/raw (might not indicate success if permissions are wrong)
+[2025-04-12T04:33:27.992+0000] {subprocess.py:106} INFO - 2025-04-12 04:33:27,988 - __main__ - INFO - Saving raw data to: /opt/***/data/raw
+[2025-04-12T04:33:27.993+0000] {subprocess.py:106} INFO - 2025-04-12 04:33:27,989 - __main__ - INFO - Skipping download for AAPL, file exists: /opt/***/data/raw/AAPL_raw.pkl
+[2025-04-12T04:33:27.993+0000] {subprocess.py:106} INFO - 2025-04-12 04:33:27,991 - __main__ - INFO - Skipping download for MA, file exists: /opt/***/data/raw/MA_raw.pkl
+[2025-04-12T04:33:27.994+0000] {subprocess.py:106} INFO - 2025-04-12 04:33:27,992 - __main__ - INFO - Skipping download for CSCO, file exists: /opt/***/data/raw/CSCO_raw.pkl
+[2025-04-12T04:33:27.994+0000] {subprocess.py:106} INFO - 2025-04-12 04:33:27,993 - __main__ - INFO - Skipping download for MSFT, file exists: /opt/***/data/raw/MSFT_raw.pkl
+[2025-04-12T04:33:27.995+0000] {subprocess.py:106} INFO - 2025-04-12 04:33:27,994 - __main__ - INFO - Skipping download for AMZN, file exists: /opt/***/data/raw/AMZN_raw.pkl
+[2025-04-12T04:33:27.996+0000] {subprocess.py:106} INFO - 2025-04-12 04:33:27,995 - __main__ - INFO - Skipping download for GOOG, file exists: /opt/***/data/raw/GOOG_raw.pkl
+[2025-04-12T04:33:27.996+0000] {subprocess.py:106} INFO - 2025-04-12 04:33:27,996 - __main__ - INFO - Skipping download for IBM, file exists: /opt/***/data/raw/IBM_raw.pkl
+[2025-04-12T04:33:27.997+0000] {subprocess.py:106} INFO - 2025-04-12 04:33:27,996 - __main__ - INFO - --- Finished Data Loading ---
+[2025-04-12T04:33:28.028+0000] {subprocess.py:106} INFO - 2025-04-12 04:33:28,028 - __main__ - INFO - --- Starting Feature Engineering (Indicators) ---
+[2025-04-12T04:33:28.054+0000] {subprocess.py:106} INFO - /home/***/.local/lib/python3.11/site-packages/ta/trend.py:1030: FutureWarning: Series.__setitem__ treating keys as positions is deprecated. In a future version, integer keys will always be treated as labels (consistent with DataFrame behavior). To set a value by position, use `ser.iloc[pos] = value`
+[2025-04-12T04:33:28.054+0000] {subprocess.py:106} INFO -   self._psar[i] = high2
+[2025-04-12T04:33:28.155+0000] {subprocess.py:106} INFO - /home/***/.local/lib/python3.11/site-packages/ta/trend.py:1030: FutureWarning: Series.__setitem__ treating keys as positions is deprecated. In a future version, integer keys will always be treated as labels (consistent with DataFrame behavior). To set a value by position, use `ser.iloc[pos] = value`
+[2025-04-12T04:33:28.158+0000] {subprocess.py:106} INFO -   self._psar[i] = high2
+[2025-04-12T04:33:28.256+0000] {subprocess.py:106} INFO - /home/***/.local/lib/python3.11/site-packages/ta/trend.py:1030: FutureWarning: Series.__setitem__ treating keys as positions is deprecated. In a future version, integer keys will always be treated as labels (consistent with DataFrame behavior). To set a value by position, use `ser.iloc[pos] = value`
+[2025-04-12T04:33:28.257+0000] {subprocess.py:106} INFO -   self._psar[i] = high2
+[2025-04-12T04:33:28.347+0000] {subprocess.py:106} INFO - /home/***/.local/lib/python3.11/site-packages/ta/trend.py:1030: FutureWarning: Series.__setitem__ treating keys as positions is deprecated. In a future version, integer keys will always be treated as labels (consistent with DataFrame behavior). To set a value by position, use `ser.iloc[pos] = value`
+[2025-04-12T04:33:28.348+0000] {subprocess.py:106} INFO -   self._psar[i] = high2
+[2025-04-12T04:33:28.443+0000] {subprocess.py:106} INFO - /home/***/.local/lib/python3.11/site-packages/ta/trend.py:1030: FutureWarning: Series.__setitem__ treating keys as positions is deprecated. In a future version, integer keys will always be treated as labels (consistent with DataFrame behavior). To set a value by position, use `ser.iloc[pos] = value`
+[2025-04-12T04:33:28.443+0000] {subprocess.py:106} INFO -   self._psar[i] = high2
+[2025-04-12T04:33:28.538+0000] {subprocess.py:106} INFO - /home/***/.local/lib/python3.11/site-packages/ta/trend.py:1030: FutureWarning: Series.__setitem__ treating keys as positions is deprecated. In a future version, integer keys will always be treated as labels (consistent with DataFrame behavior). To set a value by position, use `ser.iloc[pos] = value`
+[2025-04-12T04:33:28.540+0000] {subprocess.py:106} INFO -   self._psar[i] = high2
+[2025-04-12T04:33:28.650+0000] {subprocess.py:106} INFO - /home/***/.local/lib/python3.11/site-packages/ta/trend.py:1030: FutureWarning: Series.__setitem__ treating keys as positions is deprecated. In a future version, integer keys will always be treated as labels (consistent with DataFrame behavior). To set a value by position, use `ser.iloc[pos] = value`
+[2025-04-12T04:33:28.651+0000] {subprocess.py:106} INFO -   self._psar[i] = high2
+[2025-04-12T04:33:28.712+0000] {subprocess.py:106} INFO - 2025-04-12 04:33:28,712 - __main__ - INFO - --- Finished Feature Engineering (Indicators) ---
+[2025-04-12T04:33:28.713+0000] {subprocess.py:106} INFO - 2025-04-12 04:33:28,712 - __main__ - INFO - --- Starting Feature Filtering ---
+[2025-04-12T04:33:28.720+0000] {subprocess.py:106} INFO - 2025-04-12 04:33:28,720 - __main__ - INFO - Features remaining after filtering: 16
+[2025-04-12T04:33:28.728+0000] {subprocess.py:106} INFO - 2025-04-12 04:33:28,720 - __main__ - INFO - --- Finished Feature Filtering ---
+[2025-04-12T04:33:28.729+0000] {subprocess.py:106} INFO - 2025-04-12 04:33:28,720 - __main__ - INFO - --- Starting Data Alignment & Processing ---
+[2025-04-12T04:33:28.775+0000] {subprocess.py:106} INFO - /opt/***/src/data/make_dataset.py:144: FutureWarning: DataFrame.fillna with 'method' is deprecated and will raise in a future version. Use obj.ffill() or obj.bfill() instead.
+[2025-04-12T04:33:28.776+0000] {subprocess.py:106} INFO -   df = aligned_data[ticker][feature_columns + ['Target']].fillna(method='ffill').fillna(method='bfill')
+[2025-04-12T04:33:28.777+0000] {subprocess.py:106} INFO - /opt/***/src/data/make_dataset.py:144: FutureWarning: DataFrame.fillna with 'method' is deprecated and will raise in a future version. Use obj.ffill() or obj.bfill() instead.
+[2025-04-12T04:33:28.778+0000] {subprocess.py:106} INFO -   df = aligned_data[ticker][feature_columns + ['Target']].fillna(method='ffill').fillna(method='bfill')
+[2025-04-12T04:33:28.779+0000] {subprocess.py:106} INFO - /opt/***/src/data/make_dataset.py:144: FutureWarning: DataFrame.fillna with 'method' is deprecated and will raise in a future version. Use obj.ffill() or obj.bfill() instead.
+[2025-04-12T04:33:28.779+0000] {subprocess.py:106} INFO -   df = aligned_data[ticker][feature_columns + ['Target']].fillna(method='ffill').fillna(method='bfill')
+[2025-04-12T04:33:28.780+0000] {subprocess.py:106} INFO - /opt/***/src/data/make_dataset.py:144: FutureWarning: DataFrame.fillna with 'method' is deprecated and will raise in a future version. Use obj.ffill() or obj.bfill() instead.
+[2025-04-12T04:33:28.781+0000] {subprocess.py:106} INFO -   df = aligned_data[ticker][feature_columns + ['Target']].fillna(method='ffill').fillna(method='bfill')
+[2025-04-12T04:33:28.782+0000] {subprocess.py:106} INFO - /opt/***/src/data/make_dataset.py:144: FutureWarning: DataFrame.fillna with 'method' is deprecated and will raise in a future version. Use obj.ffill() or obj.bfill() instead.
+[2025-04-12T04:33:28.782+0000] {subprocess.py:106} INFO -   df = aligned_data[ticker][feature_columns + ['Target']].fillna(method='ffill').fillna(method='bfill')
+[2025-04-12T04:33:28.783+0000] {subprocess.py:106} INFO - /opt/***/src/data/make_dataset.py:144: FutureWarning: DataFrame.fillna with 'method' is deprecated and will raise in a future version. Use obj.ffill() or obj.bfill() instead.
+[2025-04-12T04:33:28.784+0000] {subprocess.py:106} INFO -   df = aligned_data[ticker][feature_columns + ['Target']].fillna(method='ffill').fillna(method='bfill')
+[2025-04-12T04:33:28.785+0000] {subprocess.py:106} INFO - /opt/***/src/data/make_dataset.py:144: FutureWarning: DataFrame.fillna with 'method' is deprecated and will raise in a future version. Use obj.ffill() or obj.bfill() instead.
+[2025-04-12T04:33:28.785+0000] {subprocess.py:106} INFO -   df = aligned_data[ticker][feature_columns + ['Target']].fillna(method='ffill').fillna(method='bfill')
+[2025-04-12T04:33:28.786+0000] {subprocess.py:106} INFO - 2025-04-12 04:33:28,785 - __main__ - INFO - Processed data shape: (752, 7, 16)
+[2025-04-12T04:33:28.787+0000] {subprocess.py:106} INFO - 2025-04-12 04:33:28,785 - __main__ - INFO - Targets shape: (752, 7)
+[2025-04-12T04:33:28.787+0000] {subprocess.py:106} INFO - 2025-04-12 04:33:28,785 - __main__ - INFO - Final tickers in order: ['AAPL', 'MA', 'CSCO', 'MSFT', 'AMZN', 'GOOG', 'IBM']
+[2025-04-12T04:33:28.788+0000] {subprocess.py:106} INFO - 2025-04-12 04:33:28,785 - __main__ - INFO - --- Finished Data Alignment & Processing ---
+[2025-04-12T04:33:28.789+0000] {subprocess.py:106} INFO - 2025-04-12 04:33:28,788 - __main__ - INFO - Attempting to save to absolute path: /opt/***/data/processed/all_processed_data.npz
+[2025-04-12T04:33:28.797+0000] {subprocess.py:106} INFO - 2025-04-12 04:33:28,797 - __main__ - INFO - Successfully saved processed data to /opt/***/data/processed/all_processed_data.npz
+[2025-04-12T04:33:28.798+0000] {subprocess.py:106} INFO - 2025-04-12 04:33:28,797 - __main__ - INFO - Verified file exists at: /opt/***/data/processed/all_processed_data.npz
+[2025-04-12T04:33:28.798+0000] {subprocess.py:106} INFO - 2025-04-12 04:33:28,798 - __main__ - INFO - Data processing script finished.
+[2025-04-12T04:33:28.799+0000] {subprocess.py:106} INFO - --- PRINT TEST: Starting Data Loading ---
+[2025-04-12T04:33:28.799+0000] {subprocess.py:106} INFO - Filtering highly correlated features with threshold 0.9
+[2025-04-12T04:33:28.800+0000] {subprocess.py:106} INFO - Identified 20 highly correlated features to remove: ['High', 'Low', 'Close', 'EMA_50', 'EMA_200', 'BB_High', 'BB_Low', 'OBV', 'SMA_50', 'VWAP', 'PSAR', 'Stochastic_D', 'CCI', 'Williams_R', 'Donchian_High', 'Donchian_Low', 'Keltner_High', 'Keltner_Low', 'DI_Positive', 'DI_Negative']
+[2025-04-12T04:33:28.800+0000] {subprocess.py:106} INFO - Excluding 'Close' column from removal list.
+[2025-04-12T04:33:28.800+0000] {subprocess.py:106} INFO - Final list of 19 features to remove: ['High', 'Low', 'EMA_50', 'EMA_200', 'BB_High', 'BB_Low', 'OBV', 'SMA_50', 'VWAP', 'PSAR', 'Stochastic_D', 'CCI', 'Williams_R', 'Donchian_High', 'Donchian_Low', 'Keltner_High', 'Keltner_Low', 'DI_Positive', 'DI_Negative']
+[2025-04-12T04:33:28.880+0000] {subprocess.py:110} INFO - Command exited with return code 0
+[2025-04-12T04:33:28.896+0000] {taskinstance.py:341} INFO - ::group::Post task execution logs
+[2025-04-12T04:33:28.897+0000] {taskinstance.py:353} INFO - Marking task as SUCCESS. dag_id=lstm_stock_prediction_refactored, task_id=process_data, run_id=manual__2025-04-12T04:33:26.024226+00:00, execution_date=20250412T043326, start_date=20250412T043327, end_date=20250412T043328
+[2025-04-12T04:33:28.945+0000] {local_task_job_runner.py:266} INFO - Task exited with return code 0
+[2025-04-12T04:33:28.967+0000] {taskinstance.py:3901} INFO - 1 downstream tasks scheduled from follow-on schedule check
+[2025-04-12T04:33:28.970+0000] {local_task_job_runner.py:245} INFO - ::endgroup::

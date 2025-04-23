@@ -1,0 +1,121 @@
+[2025-04-12T04:23:59.816+0000] {local_task_job_runner.py:123} INFO - ::group::Pre task execution logs
+[2025-04-12T04:23:59.835+0000] {taskinstance.py:2614} INFO - Dependencies all met for dep_context=non-requeueable deps ti=<TaskInstance: lstm_stock_prediction_refactored.train_final_model manual__2025-04-12T04:12:55.063385+00:00 [queued]>
+[2025-04-12T04:23:59.851+0000] {taskinstance.py:2614} INFO - Dependencies all met for dep_context=requeueable deps ti=<TaskInstance: lstm_stock_prediction_refactored.train_final_model manual__2025-04-12T04:12:55.063385+00:00 [queued]>
+[2025-04-12T04:23:59.854+0000] {taskinstance.py:2867} INFO - Starting attempt 1 of 2
+[2025-04-12T04:23:59.873+0000] {taskinstance.py:2890} INFO - Executing <Task(BashOperator): train_final_model> on 2025-04-12 04:12:55.063385+00:00
+[2025-04-12T04:23:59.879+0000] {standard_task_runner.py:72} INFO - Started process 3480 to run task
+[2025-04-12T04:23:59.881+0000] {standard_task_runner.py:104} INFO - Running: ['***', 'tasks', 'run', 'lstm_stock_prediction_refactored', 'train_final_model', 'manual__2025-04-12T04:12:55.063385+00:00', '--job-id', '82', '--raw', '--subdir', 'DAGS_FOLDER/lstm_refactored_dag.py', '--cfg-path', '/tmp/tmp_lcfcv0e']
+[2025-04-12T04:23:59.884+0000] {standard_task_runner.py:105} INFO - Job 82: Subtask train_final_model
+[2025-04-12T04:23:59.923+0000] {task_command.py:467} INFO - Running <TaskInstance: lstm_stock_prediction_refactored.train_final_model manual__2025-04-12T04:12:55.063385+00:00 [running]> on host 38686bf18545
+[2025-04-12T04:23:59.996+0000] {taskinstance.py:3134} INFO - Exporting env vars: AIRFLOW_CTX_DAG_OWNER='***_team' AIRFLOW_CTX_DAG_ID='lstm_stock_prediction_refactored' AIRFLOW_CTX_TASK_ID='train_final_model' AIRFLOW_CTX_EXECUTION_DATE='2025-04-12T04:12:55.063385+00:00' AIRFLOW_CTX_TRY_NUMBER='1' AIRFLOW_CTX_DAG_RUN_ID='manual__2025-04-12T04:12:55.063385+00:00'
+[2025-04-12T04:23:59.997+0000] {taskinstance.py:732} INFO - ::endgroup::
+[2025-04-12T04:24:00.009+0000] {subprocess.py:78} INFO - Tmp dir root location: /tmp
+[2025-04-12T04:24:00.011+0000] {subprocess.py:88} INFO - Running command: ['/usr/bin/bash', '-c', 'python /opt/***/src/models/train_model.py --config /opt/***/config/params.yaml']
+[2025-04-12T04:24:00.019+0000] {subprocess.py:99} INFO - Output:
+[2025-04-12T04:24:05.563+0000] {subprocess.py:106} INFO - 2025/04/12 04:24:05 WARNING mlflow.utils.git_utils: Failed to import Git (the Git executable is probably not on your PATH), so Git SHA is not available. Error: Failed to initialize: Bad git executable.
+[2025-04-12T04:24:05.564+0000] {subprocess.py:106} INFO - The git executable must be specified in one of the following ways:
+[2025-04-12T04:24:05.564+0000] {subprocess.py:106} INFO -     - be included in your $PATH
+[2025-04-12T04:24:05.565+0000] {subprocess.py:106} INFO -     - be set via $GIT_PYTHON_GIT_EXECUTABLE
+[2025-04-12T04:24:05.566+0000] {subprocess.py:106} INFO -     - explicitly set via git.refresh(<full-path-to-git-executable>)
+[2025-04-12T04:24:05.566+0000] {subprocess.py:106} INFO - 
+[2025-04-12T04:24:05.567+0000] {subprocess.py:106} INFO - All git commands will error until this is rectified.
+[2025-04-12T04:24:05.568+0000] {subprocess.py:106} INFO - 
+[2025-04-12T04:24:05.568+0000] {subprocess.py:106} INFO - This initial message can be silenced or aggravated in the future by setting the
+[2025-04-12T04:24:05.569+0000] {subprocess.py:106} INFO - $GIT_PYTHON_REFRESH environment variable. Use one of the following values:
+[2025-04-12T04:24:05.569+0000] {subprocess.py:106} INFO -     - quiet|q|silence|s|silent|none|n|0: for no message or exception
+[2025-04-12T04:24:05.570+0000] {subprocess.py:106} INFO -     - warn|w|warning|log|l|1: for a warning message (logging level CRITICAL, displayed by default)
+[2025-04-12T04:24:05.570+0000] {subprocess.py:106} INFO -     - error|e|exception|raise|r|2: for a raised exception
+[2025-04-12T04:24:05.571+0000] {subprocess.py:106} INFO - 
+[2025-04-12T04:24:05.571+0000] {subprocess.py:106} INFO - Example:
+[2025-04-12T04:24:05.572+0000] {subprocess.py:106} INFO -     export GIT_PYTHON_REFRESH=quiet
+[2025-04-12T04:24:05.573+0000] {subprocess.py:106} INFO - 
+[2025-04-12T04:28:43.685+0000] {subprocess.py:106} INFO - [31m2025/04/12 04:28:43 WARNING mlflow.models.model: Model logged without a signature and input example. Please set `input_example` parameter when logging the model to auto infer the model signature.[0m
+[2025-04-12T04:28:44.741+0000] {subprocess.py:106} INFO - Using device: cpu
+[2025-04-12T04:28:44.742+0000] {subprocess.py:106} INFO - --- Loading Scaled Data from /opt/***/data/features/split_scaled_data.npz ---
+[2025-04-12T04:28:44.742+0000] {subprocess.py:106} INFO - --- Finished Loading Scaled Data ---
+[2025-04-12T04:28:44.743+0000] {subprocess.py:106} INFO - --- Loading Scalers from /opt/***/data/processed/scalers.pkl ---
+[2025-04-12T04:28:44.743+0000] {subprocess.py:106} INFO - --- Finished Loading Scalers ---
+[2025-04-12T04:28:44.743+0000] {subprocess.py:106} INFO - --- Loading Tickers from /opt/***/data/processed/all_processed_data.npz ---
+[2025-04-12T04:28:44.744+0000] {subprocess.py:106} INFO - Tickers: ['AAPL', 'MA', 'CSCO', 'MSFT', 'AMZN', 'GOOG', 'IBM']
+[2025-04-12T04:28:44.744+0000] {subprocess.py:106} INFO - --- Finished Loading Tickers ---
+[2025-04-12T04:28:44.745+0000] {subprocess.py:106} INFO - --- Loading Best Hyperparameters from /opt/***/config/best_params.json ---
+[2025-04-12T04:28:44.746+0000] {subprocess.py:106} INFO - Best parameters loaded: {'batch_size': 16, 'hidden_size': 256, 'num_layers': 2, 'dropout_rate': 0.4, 'learning_rate': 0.00044478440549256443, 'model_type': 'lstm_cross_attention'}
+[2025-04-12T04:28:44.746+0000] {subprocess.py:106} INFO - --- Finished Loading Best Hyperparameters ---
+[2025-04-12T04:28:44.747+0000] {subprocess.py:106} INFO - --- Setting MLflow Experiment: Stock_Price_Prediction_LSTM_Refactored ---
+[2025-04-12T04:28:44.747+0000] {subprocess.py:106} INFO - Using MLflow Tracking URI: http://mlflow-server:5000
+[2025-04-12T04:28:44.748+0000] {subprocess.py:106} INFO - --- Starting Final Model Training ---
+[2025-04-12T04:28:44.749+0000] {subprocess.py:106} INFO - --- MLflow Run Started for Final Training ---
+[2025-04-12T04:28:44.749+0000] {subprocess.py:106} INFO - Epoch [1/50], Train Loss: 0.0935, Test Loss: 0.0876
+[2025-04-12T04:28:44.749+0000] {subprocess.py:106} INFO - Epoch [2/50], Train Loss: 0.0272, Test Loss: 0.0389
+[2025-04-12T04:28:44.750+0000] {subprocess.py:106} INFO - Epoch [3/50], Train Loss: 0.0244, Test Loss: 0.0395
+[2025-04-12T04:28:44.750+0000] {subprocess.py:106} INFO - Epoch [4/50], Train Loss: 0.0232, Test Loss: 0.0355
+[2025-04-12T04:28:44.751+0000] {subprocess.py:106} INFO - Epoch [5/50], Train Loss: 0.0218, Test Loss: 0.0479
+[2025-04-12T04:28:44.751+0000] {subprocess.py:106} INFO - Epoch [6/50], Train Loss: 0.0210, Test Loss: 0.0486
+[2025-04-12T04:28:44.752+0000] {subprocess.py:106} INFO - Epoch [7/50], Train Loss: 0.0197, Test Loss: 0.0487
+[2025-04-12T04:28:44.752+0000] {subprocess.py:106} INFO - Epoch [8/50], Train Loss: 0.0184, Test Loss: 0.0464
+[2025-04-12T04:28:44.753+0000] {subprocess.py:106} INFO - Epoch [9/50], Train Loss: 0.0158, Test Loss: 0.0579
+[2025-04-12T04:28:44.754+0000] {subprocess.py:106} INFO - Epoch [10/50], Train Loss: 0.0141, Test Loss: 0.0412
+[2025-04-12T04:28:44.755+0000] {subprocess.py:106} INFO - Epoch [11/50], Train Loss: 0.0119, Test Loss: 0.0510
+[2025-04-12T04:28:44.756+0000] {subprocess.py:106} INFO - Epoch [12/50], Train Loss: 0.0127, Test Loss: 0.1178
+[2025-04-12T04:28:44.757+0000] {subprocess.py:106} INFO - Epoch [13/50], Train Loss: 0.0110, Test Loss: 0.0406
+[2025-04-12T04:28:44.758+0000] {subprocess.py:106} INFO - Epoch [14/50], Train Loss: 0.0096, Test Loss: 0.0414
+[2025-04-12T04:28:44.758+0000] {subprocess.py:106} INFO - Epoch [15/50], Train Loss: 0.0097, Test Loss: 0.0360
+[2025-04-12T04:28:44.759+0000] {subprocess.py:106} INFO - Epoch [16/50], Train Loss: 0.0086, Test Loss: 0.0362
+[2025-04-12T04:28:44.760+0000] {subprocess.py:106} INFO - Epoch [17/50], Train Loss: 0.0083, Test Loss: 0.0379
+[2025-04-12T04:28:44.760+0000] {subprocess.py:106} INFO - Epoch [18/50], Train Loss: 0.0085, Test Loss: 0.0420
+[2025-04-12T04:28:44.761+0000] {subprocess.py:106} INFO - Epoch [19/50], Train Loss: 0.0083, Test Loss: 0.0451
+[2025-04-12T04:28:44.767+0000] {subprocess.py:106} INFO - Epoch [20/50], Train Loss: 0.0074, Test Loss: 0.0406
+[2025-04-12T04:28:44.768+0000] {subprocess.py:106} INFO - Epoch [21/50], Train Loss: 0.0074, Test Loss: 0.0379
+[2025-04-12T04:28:44.769+0000] {subprocess.py:106} INFO - Epoch [22/50], Train Loss: 0.0074, Test Loss: 0.0451
+[2025-04-12T04:28:44.769+0000] {subprocess.py:106} INFO - Epoch [23/50], Train Loss: 0.0076, Test Loss: 0.0461
+[2025-04-12T04:28:44.770+0000] {subprocess.py:106} INFO - Epoch [24/50], Train Loss: 0.0072, Test Loss: 0.0435
+[2025-04-12T04:28:44.770+0000] {subprocess.py:106} INFO - Epoch [25/50], Train Loss: 0.0076, Test Loss: 0.0335
+[2025-04-12T04:28:44.772+0000] {subprocess.py:106} INFO - Epoch [26/50], Train Loss: 0.0068, Test Loss: 0.0445
+[2025-04-12T04:28:44.773+0000] {subprocess.py:106} INFO - Epoch [27/50], Train Loss: 0.0070, Test Loss: 0.0353
+[2025-04-12T04:28:44.774+0000] {subprocess.py:106} INFO - Epoch [28/50], Train Loss: 0.0070, Test Loss: 0.0346
+[2025-04-12T04:28:44.774+0000] {subprocess.py:106} INFO - Epoch [29/50], Train Loss: 0.0069, Test Loss: 0.0354
+[2025-04-12T04:28:44.775+0000] {subprocess.py:106} INFO - Epoch [30/50], Train Loss: 0.0069, Test Loss: 0.0386
+[2025-04-12T04:28:44.775+0000] {subprocess.py:106} INFO - Epoch [31/50], Train Loss: 0.0071, Test Loss: 0.0344
+[2025-04-12T04:28:44.776+0000] {subprocess.py:106} INFO - Epoch [32/50], Train Loss: 0.0068, Test Loss: 0.0329
+[2025-04-12T04:28:44.776+0000] {subprocess.py:106} INFO - Epoch [33/50], Train Loss: 0.0066, Test Loss: 0.0336
+[2025-04-12T04:28:44.777+0000] {subprocess.py:106} INFO - Epoch [34/50], Train Loss: 0.0066, Test Loss: 0.0412
+[2025-04-12T04:28:44.777+0000] {subprocess.py:106} INFO - Epoch [35/50], Train Loss: 0.0062, Test Loss: 0.0347
+[2025-04-12T04:28:44.778+0000] {subprocess.py:106} INFO - Epoch [36/50], Train Loss: 0.0062, Test Loss: 0.0331
+[2025-04-12T04:28:44.778+0000] {subprocess.py:106} INFO - Epoch [37/50], Train Loss: 0.0064, Test Loss: 0.0344
+[2025-04-12T04:28:44.778+0000] {subprocess.py:106} INFO - Epoch [38/50], Train Loss: 0.0066, Test Loss: 0.0378
+[2025-04-12T04:28:44.779+0000] {subprocess.py:106} INFO - Epoch [39/50], Train Loss: 0.0063, Test Loss: 0.0351
+[2025-04-12T04:28:44.780+0000] {subprocess.py:106} INFO - Epoch [40/50], Train Loss: 0.0063, Test Loss: 0.0318
+[2025-04-12T04:28:44.780+0000] {subprocess.py:106} INFO - Epoch [41/50], Train Loss: 0.0060, Test Loss: 0.0299
+[2025-04-12T04:28:44.781+0000] {subprocess.py:106} INFO - Epoch [42/50], Train Loss: 0.0059, Test Loss: 0.0290
+[2025-04-12T04:28:44.781+0000] {subprocess.py:106} INFO - Epoch [43/50], Train Loss: 0.0060, Test Loss: 0.0386
+[2025-04-12T04:28:44.781+0000] {subprocess.py:106} INFO - Epoch [44/50], Train Loss: 0.0062, Test Loss: 0.0345
+[2025-04-12T04:28:44.782+0000] {subprocess.py:106} INFO - Epoch [45/50], Train Loss: 0.0060, Test Loss: 0.0420
+[2025-04-12T04:28:44.782+0000] {subprocess.py:106} INFO - Epoch [46/50], Train Loss: 0.0058, Test Loss: 0.0399
+[2025-04-12T04:28:44.782+0000] {subprocess.py:106} INFO - Epoch [47/50], Train Loss: 0.0056, Test Loss: 0.0387
+[2025-04-12T04:28:44.783+0000] {subprocess.py:106} INFO - Epoch [48/50], Train Loss: 0.0061, Test Loss: 0.0431
+[2025-04-12T04:28:44.783+0000] {subprocess.py:106} INFO - Epoch [49/50], Train Loss: 0.0062, Test Loss: 0.0340
+[2025-04-12T04:28:44.783+0000] {subprocess.py:106} INFO - Epoch [50/50], Train Loss: 0.0062, Test Loss: 0.0273
+[2025-04-12T04:28:44.784+0000] {subprocess.py:106} INFO - Loaded best model state_dict from training run.
+[2025-04-12T04:28:44.784+0000] {subprocess.py:106} INFO - Final model metrics logged to MLflow.
+[2025-04-12T04:28:44.785+0000] {subprocess.py:106} INFO - Logging PyTorch model to MLflow...
+[2025-04-12T04:28:44.785+0000] {subprocess.py:106} INFO - Model logged.
+[2025-04-12T04:28:44.786+0000] {subprocess.py:106} INFO - Generating prediction visualizations...
+[2025-04-12T04:28:44.786+0000] {subprocess.py:106} INFO - Visualizations generated and logged.
+[2025-04-12T04:28:44.787+0000] {subprocess.py:106} INFO - --- MLflow Run Finished ---
+[2025-04-12T04:28:44.788+0000] {subprocess.py:106} INFO - 🏃 View run final_model_training at: http://mlflow-server:5000/#/experiments/469555157888134183/runs/0a86fbcaf8f94e14ac17c094d7a4d7a9
+[2025-04-12T04:28:44.790+0000] {subprocess.py:106} INFO - 🧪 View experiment at: http://mlflow-server:5000/#/experiments/469555157888134183
+[2025-04-12T04:28:44.791+0000] {subprocess.py:106} INFO - --- Finished Final Model Training ---
+[2025-04-12T04:28:44.792+0000] {subprocess.py:106} INFO - 
+[2025-04-12T04:28:44.793+0000] {subprocess.py:106} INFO - Final Training Summary:
+[2025-04-12T04:28:44.793+0000] {subprocess.py:106} INFO - ========================
+[2025-04-12T04:28:44.794+0000] {subprocess.py:106} INFO - test_loss: 0.0273
+[2025-04-12T04:28:44.795+0000] {subprocess.py:106} INFO - avg_mse: 775.5130
+[2025-04-12T04:28:44.795+0000] {subprocess.py:106} INFO - avg_mape: 0.0663
+[2025-04-12T04:28:44.796+0000] {subprocess.py:106} INFO - avg_direction_accuracy: 0.5169
+[2025-04-12T04:28:44.797+0000] {subprocess.py:106} INFO - ========================
+[2025-04-12T04:28:45.851+0000] {subprocess.py:110} INFO - Command exited with return code 0
+[2025-04-12T04:28:45.870+0000] {taskinstance.py:341} INFO - ::group::Post task execution logs
+[2025-04-12T04:28:45.870+0000] {taskinstance.py:353} INFO - Marking task as SUCCESS. dag_id=lstm_stock_prediction_refactored, task_id=train_final_model, run_id=manual__2025-04-12T04:12:55.063385+00:00, execution_date=20250412T041255, start_date=20250412T042359, end_date=20250412T042845
+[2025-04-12T04:28:45.898+0000] {local_task_job_runner.py:266} INFO - Task exited with return code 0
+[2025-04-12T04:28:45.910+0000] {taskinstance.py:3901} INFO - 0 downstream tasks scheduled from follow-on schedule check
+[2025-04-12T04:28:45.914+0000] {local_task_job_runner.py:245} INFO - ::endgroup::

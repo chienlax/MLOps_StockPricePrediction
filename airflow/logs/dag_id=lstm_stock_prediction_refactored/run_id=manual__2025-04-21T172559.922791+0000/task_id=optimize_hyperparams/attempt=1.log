@@ -1,0 +1,36 @@
+[2025-04-21T17:26:54.426+0000] {local_task_job_runner.py:123} INFO - ::group::Pre task execution logs
+[2025-04-21T17:26:54.456+0000] {taskinstance.py:2614} INFO - Dependencies all met for dep_context=non-requeueable deps ti=<TaskInstance: lstm_stock_prediction_refactored.optimize_hyperparams manual__2025-04-21T17:25:59.922791+00:00 [queued]>
+[2025-04-21T17:26:54.466+0000] {taskinstance.py:2614} INFO - Dependencies all met for dep_context=requeueable deps ti=<TaskInstance: lstm_stock_prediction_refactored.optimize_hyperparams manual__2025-04-21T17:25:59.922791+00:00 [queued]>
+[2025-04-21T17:26:54.467+0000] {taskinstance.py:2867} INFO - Starting attempt 1 of 2
+[2025-04-21T17:26:54.480+0000] {taskinstance.py:2890} INFO - Executing <Task(BashOperator): optimize_hyperparams> on 2025-04-21 17:25:59.922791+00:00
+[2025-04-21T17:26:54.487+0000] {standard_task_runner.py:72} INFO - Started process 545 to run task
+[2025-04-21T17:26:54.490+0000] {standard_task_runner.py:104} INFO - Running: ['***', 'tasks', 'run', 'lstm_stock_prediction_refactored', 'optimize_hyperparams', 'manual__2025-04-21T17:25:59.922791+00:00', '--job-id', '6', '--raw', '--subdir', 'DAGS_FOLDER/lstm_refactored_dag.py', '--cfg-path', '/tmp/tmp91hlmcju']
+[2025-04-21T17:26:54.493+0000] {standard_task_runner.py:105} INFO - Job 6: Subtask optimize_hyperparams
+[2025-04-21T17:26:54.575+0000] {task_command.py:467} INFO - Running <TaskInstance: lstm_stock_prediction_refactored.optimize_hyperparams manual__2025-04-21T17:25:59.922791+00:00 [running]> on host a528bcf7a8c9
+[2025-04-21T17:26:54.684+0000] {taskinstance.py:3134} INFO - Exporting env vars: AIRFLOW_CTX_DAG_OWNER='***_team' AIRFLOW_CTX_DAG_ID='lstm_stock_prediction_refactored' AIRFLOW_CTX_TASK_ID='optimize_hyperparams' AIRFLOW_CTX_EXECUTION_DATE='2025-04-21T17:25:59.922791+00:00' AIRFLOW_CTX_TRY_NUMBER='1' AIRFLOW_CTX_DAG_RUN_ID='manual__2025-04-21T17:25:59.922791+00:00'
+[2025-04-21T17:26:54.685+0000] {taskinstance.py:732} INFO - ::endgroup::
+[2025-04-21T17:26:54.699+0000] {subprocess.py:78} INFO - Tmp dir root location: /tmp
+[2025-04-21T17:26:54.702+0000] {subprocess.py:88} INFO - Running command: ['/usr/bin/bash', '-c', 'python /opt/***/src/models/optimize_hyperparams.py --config /opt/***/config/params.yaml']
+[2025-04-21T17:26:54.717+0000] {subprocess.py:99} INFO - Output:
+[2025-04-21T17:27:03.567+0000] {subprocess.py:106} INFO - mkdir -p failed for path /home/***/.cache/matplotlib: [Errno 13] Permission denied: '/home/***/.cache/matplotlib'
+[2025-04-21T17:27:03.579+0000] {subprocess.py:106} INFO - Matplotlib created a temporary cache directory at /tmp/matplotlib-coen8bzu because there was an issue with the default path (/home/***/.cache/matplotlib); it is highly recommended to set the MPLCONFIGDIR environment variable to a writable directory, in particular to speed up the import of Matplotlib and to better support multiprocessing.
+[2025-04-21T17:27:12.983+0000] {subprocess.py:106} INFO - [I 2025-04-21 17:27:12,983] A new study created in memory with name: no-name-8b523097-982f-4bbd-a168-495e614fb726
+[2025-04-21T17:27:28.514+0000] {subprocess.py:106} INFO - [I 2025-04-21 17:27:28,511] Trial 0 finished with value: 0.07215997576713562 and parameters: {'batch_size': 64, 'hidden_size': 128, 'num_layers': 3, 'dropout_rate': 0.2, 'learning_rate': 0.004922561455015585, 'model_type': 'lstm_attention'}. Best is trial 0 with value: 0.07215997576713562.
+[2025-04-21T17:27:28.523+0000] {subprocess.py:106} INFO - Using device: cpu
+[2025-04-21T17:27:28.524+0000] {subprocess.py:106} INFO - --- Loading Scaled Data from /opt/***/data/features/split_scaled_data.npz ---
+[2025-04-21T17:27:28.526+0000] {subprocess.py:106} INFO - --- Finished Loading Scaled Data ---
+[2025-04-21T17:27:28.527+0000] {subprocess.py:106} INFO - --- Loading Scalers from /opt/***/data/processed/scalers.pkl ---
+[2025-04-21T17:27:28.527+0000] {subprocess.py:106} INFO - --- Finished Loading Scalers ---
+[2025-04-21T17:27:28.528+0000] {subprocess.py:106} INFO - --- Starting Optuna Optimization (1 trials) ---
+[2025-04-21T17:27:28.528+0000] {subprocess.py:106} INFO - Early stopping at epoch 8
+[2025-04-21T17:27:28.529+0000] {subprocess.py:106} INFO - --- Finished Optuna Optimization ---
+[2025-04-21T17:27:28.530+0000] {subprocess.py:106} INFO - Best trial value (loss): 0.07215997576713562
+[2025-04-21T17:27:28.530+0000] {subprocess.py:106} INFO - Best parameters: {'batch_size': 64, 'hidden_size': 128, 'num_layers': 3, 'dropout_rate': 0.2, 'learning_rate': 0.004922561455015585, 'model_type': 'lstm_attention'}
+[2025-04-21T17:27:28.531+0000] {subprocess.py:106} INFO - --- Saving Best Parameters to /opt/***/config/best_params.json ---
+[2025-04-21T17:27:28.532+0000] {subprocess.py:106} INFO - --- Finished Saving Best Parameters ---
+[2025-04-21T17:27:30.295+0000] {subprocess.py:110} INFO - Command exited with return code 0
+[2025-04-21T17:27:30.419+0000] {taskinstance.py:341} INFO - ::group::Post task execution logs
+[2025-04-21T17:27:30.422+0000] {taskinstance.py:353} INFO - Marking task as SUCCESS. dag_id=lstm_stock_prediction_refactored, task_id=optimize_hyperparams, run_id=manual__2025-04-21T17:25:59.922791+00:00, execution_date=20250421T172559, start_date=20250421T172654, end_date=20250421T172730
+[2025-04-21T17:27:30.491+0000] {local_task_job_runner.py:266} INFO - Task exited with return code 0
+[2025-04-21T17:27:30.558+0000] {taskinstance.py:3901} INFO - 1 downstream tasks scheduled from follow-on schedule check
+[2025-04-21T17:27:30.561+0000] {local_task_job_runner.py:245} INFO - ::endgroup::
