@@ -6,7 +6,6 @@ import mlflow
 import torch # Needed for no_grad
 from pathlib import Path
 
-#%%
 def evaluate_model(model, test_loader, criterion, y_scalers, device):
     """Evaluate the model and return predictions and metrics"""
     model.eval()
@@ -67,7 +66,6 @@ def evaluate_model(model, test_loader, criterion, y_scalers, device):
     
     return predictions, targets, metrics
 
-#%%
 # --- Modify visualize_predictions to accept an output dir ---
 def visualize_predictions(predictions, targets, y_scalers, tickers, output_dir, num_points=20):
     """Visualize predictions vs actual values for each stock"""

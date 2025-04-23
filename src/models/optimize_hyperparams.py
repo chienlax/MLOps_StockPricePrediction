@@ -13,7 +13,6 @@ from pathlib import Path
 from model_definitions import StockLSTM, StockLSTMWithAttention, StockLSTMWithCrossStockAttention
 from evaluate_model import evaluate_model # We need evaluation during objective calculation
 
-
 def objective(trial, X_train, y_train, X_test, y_test, num_features, num_stocks, y_scalers, device):
     """Optuna objective function for hyperparameter optimization"""
     

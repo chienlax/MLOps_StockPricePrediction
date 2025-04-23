@@ -145,3 +145,79 @@ airflow.exceptions.AirflowException: Bash command failed. The command returned a
 [2025-04-21T17:27:48.392+0000] {local_task_job_runner.py:266} INFO - Task exited with return code 1
 [2025-04-21T17:27:48.414+0000] {taskinstance.py:3901} INFO - 0 downstream tasks scheduled from follow-on schedule check
 [2025-04-21T17:27:48.416+0000] {local_task_job_runner.py:245} INFO - ::endgroup::
+[2025-04-23T06:43:45.010+0000] {local_task_job_runner.py:123} INFO - ::group::Pre task execution logs
+[2025-04-23T06:43:45.024+0000] {taskinstance.py:2614} INFO - Dependencies all met for dep_context=non-requeueable deps ti=<TaskInstance: lstm_stock_prediction_refactored.train_final_model scheduled__2025-04-14T08:00:00+00:00 [queued]>
+[2025-04-23T06:43:45.031+0000] {taskinstance.py:2614} INFO - Dependencies all met for dep_context=requeueable deps ti=<TaskInstance: lstm_stock_prediction_refactored.train_final_model scheduled__2025-04-14T08:00:00+00:00 [queued]>
+[2025-04-23T06:43:45.032+0000] {taskinstance.py:2867} INFO - Starting attempt 1 of 2
+[2025-04-23T06:43:45.042+0000] {taskinstance.py:2890} INFO - Executing <Task(BashOperator): train_final_model> on 2025-04-14 08:00:00+00:00
+[2025-04-23T06:43:45.053+0000] {standard_task_runner.py:104} INFO - Running: ['***', 'tasks', 'run', 'lstm_stock_prediction_refactored', 'train_final_model', 'scheduled__2025-04-14T08:00:00+00:00', '--job-id', '96', '--raw', '--subdir', 'DAGS_FOLDER/lstm_refactored_dag.py', '--cfg-path', '/tmp/tmp1d1rueca']
+[2025-04-23T06:43:45.051+0000] {standard_task_runner.py:72} INFO - Started process 306 to run task
+[2025-04-23T06:43:45.057+0000] {standard_task_runner.py:105} INFO - Job 96: Subtask train_final_model
+[2025-04-23T06:43:45.088+0000] {task_command.py:467} INFO - Running <TaskInstance: lstm_stock_prediction_refactored.train_final_model scheduled__2025-04-14T08:00:00+00:00 [running]> on host 7f98232cb4c4
+[2025-04-23T06:43:45.177+0000] {taskinstance.py:3134} INFO - Exporting env vars: AIRFLOW_CTX_DAG_OWNER='***_team' AIRFLOW_CTX_DAG_ID='lstm_stock_prediction_refactored' AIRFLOW_CTX_TASK_ID='train_final_model' AIRFLOW_CTX_EXECUTION_DATE='2025-04-14T08:00:00+00:00' AIRFLOW_CTX_TRY_NUMBER='1' AIRFLOW_CTX_DAG_RUN_ID='scheduled__2025-04-14T08:00:00+00:00'
+[2025-04-23T06:43:45.178+0000] {taskinstance.py:732} INFO - ::endgroup::
+[2025-04-23T06:43:45.201+0000] {subprocess.py:78} INFO - Tmp dir root location: /tmp
+[2025-04-23T06:43:45.203+0000] {subprocess.py:88} INFO - Running command: ['/usr/bin/bash', '-c', 'python /opt/***/src/models/train_model.py --config /opt/***/config/params.yaml']
+[2025-04-23T06:43:45.217+0000] {subprocess.py:99} INFO - Output:
+[2025-04-23T06:43:51.080+0000] {subprocess.py:106} INFO - 2025/04/23 06:43:51 WARNING mlflow.utils.git_utils: Failed to import Git (the Git executable is probably not on your PATH), so Git SHA is not available. Error: Failed to initialize: Bad git executable.
+[2025-04-23T06:43:51.088+0000] {subprocess.py:106} INFO - The git executable must be specified in one of the following ways:
+[2025-04-23T06:43:51.094+0000] {subprocess.py:106} INFO -     - be included in your $PATH
+[2025-04-23T06:43:51.095+0000] {subprocess.py:106} INFO -     - be set via $GIT_PYTHON_GIT_EXECUTABLE
+[2025-04-23T06:43:51.096+0000] {subprocess.py:106} INFO -     - explicitly set via git.refresh(<full-path-to-git-executable>)
+[2025-04-23T06:43:51.097+0000] {subprocess.py:106} INFO - 
+[2025-04-23T06:43:51.097+0000] {subprocess.py:106} INFO - All git commands will error until this is rectified.
+[2025-04-23T06:43:51.098+0000] {subprocess.py:106} INFO - 
+[2025-04-23T06:43:51.099+0000] {subprocess.py:106} INFO - This initial message can be silenced or aggravated in the future by setting the
+[2025-04-23T06:43:51.100+0000] {subprocess.py:106} INFO - $GIT_PYTHON_REFRESH environment variable. Use one of the following values:
+[2025-04-23T06:43:51.101+0000] {subprocess.py:106} INFO -     - quiet|q|silence|s|silent|none|n|0: for no message or exception
+[2025-04-23T06:43:51.101+0000] {subprocess.py:106} INFO -     - warn|w|warning|log|l|1: for a warning message (logging level CRITICAL, displayed by default)
+[2025-04-23T06:43:51.102+0000] {subprocess.py:106} INFO -     - error|e|exception|raise|r|2: for a raised exception
+[2025-04-23T06:43:51.102+0000] {subprocess.py:106} INFO - 
+[2025-04-23T06:43:51.103+0000] {subprocess.py:106} INFO - Example:
+[2025-04-23T06:43:51.104+0000] {subprocess.py:106} INFO -     export GIT_PYTHON_REFRESH=quiet
+[2025-04-23T06:43:51.105+0000] {subprocess.py:106} INFO - 
+[2025-04-23T06:43:58.819+0000] {subprocess.py:106} INFO - [31m2025/04/23 06:43:58 WARNING mlflow.models.model: Model logged without a signature and input example. Please set `input_example` parameter when logging the model to auto infer the model signature.[0m
+[2025-04-23T06:43:59.693+0000] {subprocess.py:106} INFO - Using device: cpu
+[2025-04-23T06:43:59.694+0000] {subprocess.py:106} INFO - --- Loading Scaled Data from /opt/***/data/features/split_scaled_data.npz ---
+[2025-04-23T06:43:59.695+0000] {subprocess.py:106} INFO - --- Finished Loading Scaled Data ---
+[2025-04-23T06:43:59.695+0000] {subprocess.py:106} INFO - --- Loading Scalers from /opt/***/data/processed/scalers.pkl ---
+[2025-04-23T06:43:59.696+0000] {subprocess.py:106} INFO - --- Finished Loading Scalers ---
+[2025-04-23T06:43:59.696+0000] {subprocess.py:106} INFO - --- Loading Tickers from /opt/***/data/processed/all_processed_data.npz ---
+[2025-04-23T06:43:59.697+0000] {subprocess.py:106} INFO - Tickers: ['AAPL', 'MA', 'CSCO', 'MSFT', 'AMZN', 'GOOG', 'IBM']
+[2025-04-23T06:43:59.697+0000] {subprocess.py:106} INFO - --- Finished Loading Tickers ---
+[2025-04-23T06:43:59.698+0000] {subprocess.py:106} INFO - --- Loading Best Hyperparameters from /opt/***/config/best_params.json ---
+[2025-04-23T06:43:59.698+0000] {subprocess.py:106} INFO - Best parameters loaded: {'batch_size': 48, 'hidden_size': 128, 'num_layers': 2, 'dropout_rate': 0.2, 'learning_rate': 0.00014200347347812861, 'model_type': 'lstm_attention'}
+[2025-04-23T06:43:59.699+0000] {subprocess.py:106} INFO - --- Finished Loading Best Hyperparameters ---
+[2025-04-23T06:43:59.700+0000] {subprocess.py:106} INFO - --- Setting MLflow Experiment: Stock_Price_Prediction_LSTM_Refactored ---
+[2025-04-23T06:43:59.701+0000] {subprocess.py:106} INFO - Using MLflow Tracking URI: http://mlflow-server:5000
+[2025-04-23T06:43:59.701+0000] {subprocess.py:106} INFO - --- Starting Final Model Training ---
+[2025-04-23T06:43:59.702+0000] {subprocess.py:106} INFO - --- MLflow Run Started for Final Training ---
+[2025-04-23T06:43:59.703+0000] {subprocess.py:106} INFO - Epoch [1/5], Train Loss: 0.2434, Test Loss: 0.9530
+[2025-04-23T06:43:59.703+0000] {subprocess.py:106} INFO - Epoch [2/5], Train Loss: 0.2082, Test Loss: 0.8221
+[2025-04-23T06:43:59.704+0000] {subprocess.py:106} INFO - Epoch [3/5], Train Loss: 0.1384, Test Loss: 0.4504
+[2025-04-23T06:43:59.705+0000] {subprocess.py:106} INFO - Epoch [4/5], Train Loss: 0.0841, Test Loss: 0.3656
+[2025-04-23T06:43:59.705+0000] {subprocess.py:106} INFO - Epoch [5/5], Train Loss: 0.0649, Test Loss: 0.2560
+[2025-04-23T06:43:59.707+0000] {subprocess.py:106} INFO - Loaded best model state_dict from training run.
+[2025-04-23T06:43:59.708+0000] {subprocess.py:106} INFO - Final model metrics logged to MLflow.
+[2025-04-23T06:43:59.708+0000] {subprocess.py:106} INFO - Logging PyTorch model to MLflow...
+[2025-04-23T06:43:59.709+0000] {subprocess.py:106} INFO - Model logged.
+[2025-04-23T06:43:59.710+0000] {subprocess.py:106} INFO - Generating prediction visualizations...
+[2025-04-23T06:43:59.710+0000] {subprocess.py:106} INFO - Visualizations generated and logged.
+[2025-04-23T06:43:59.711+0000] {subprocess.py:106} INFO - --- MLflow Run Finished ---
+[2025-04-23T06:43:59.711+0000] {subprocess.py:106} INFO - 🏃 View run final_model_training at: http://mlflow-server:5000/#/experiments/469555157888134183/runs/57334570b37342a2aabe0d4948fe7c77
+[2025-04-23T06:43:59.712+0000] {subprocess.py:106} INFO - 🧪 View experiment at: http://mlflow-server:5000/#/experiments/469555157888134183
+[2025-04-23T06:43:59.713+0000] {subprocess.py:106} INFO - --- Finished Final Model Training ---
+[2025-04-23T06:43:59.713+0000] {subprocess.py:106} INFO - 
+[2025-04-23T06:43:59.714+0000] {subprocess.py:106} INFO - Final Training Summary:
+[2025-04-23T06:43:59.714+0000] {subprocess.py:106} INFO - ========================
+[2025-04-23T06:43:59.715+0000] {subprocess.py:106} INFO - test_loss: 0.2560
+[2025-04-23T06:43:59.716+0000] {subprocess.py:106} INFO - avg_mse: 4726.6794
+[2025-04-23T06:43:59.717+0000] {subprocess.py:106} INFO - avg_mape: 0.2225
+[2025-04-23T06:43:59.717+0000] {subprocess.py:106} INFO - avg_direction_accuracy: 0.4950
+[2025-04-23T06:43:59.718+0000] {subprocess.py:106} INFO - ========================
+[2025-04-23T06:44:00.694+0000] {subprocess.py:110} INFO - Command exited with return code 0
+[2025-04-23T06:44:00.712+0000] {taskinstance.py:341} INFO - ::group::Post task execution logs
+[2025-04-23T06:44:00.713+0000] {taskinstance.py:353} INFO - Marking task as SUCCESS. dag_id=lstm_stock_prediction_refactored, task_id=train_final_model, run_id=scheduled__2025-04-14T08:00:00+00:00, execution_date=20250414T080000, start_date=20250423T064345, end_date=20250423T064400
+[2025-04-23T06:44:00.755+0000] {local_task_job_runner.py:266} INFO - Task exited with return code 0
+[2025-04-23T06:44:00.774+0000] {taskinstance.py:3901} INFO - 0 downstream tasks scheduled from follow-on schedule check
+[2025-04-23T06:44:00.776+0000] {local_task_job_runner.py:245} INFO - ::endgroup::

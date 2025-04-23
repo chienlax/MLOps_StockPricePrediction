@@ -6,6 +6,7 @@ COPY src/api    ./api
 
 # 2) Copy các template (Jinja2)
 COPY templates  ./templates
+COPY ./templates /opt/airflow/templates
 
 # 3) Copy frontend static files vào templates/static
 #    (nếu bạn muốn giữ cấu trúc như code đang mount)

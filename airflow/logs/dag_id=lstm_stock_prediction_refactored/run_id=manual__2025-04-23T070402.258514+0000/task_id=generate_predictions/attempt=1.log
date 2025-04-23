@@ -1,0 +1,23 @@
+[2025-04-23T07:04:35.417+0000] {local_task_job_runner.py:123} INFO - ::group::Pre task execution logs
+[2025-04-23T07:04:35.433+0000] {taskinstance.py:2614} INFO - Dependencies all met for dep_context=non-requeueable deps ti=<TaskInstance: lstm_stock_prediction_refactored.generate_predictions manual__2025-04-23T07:04:02.258514+00:00 [queued]>
+[2025-04-23T07:04:35.442+0000] {taskinstance.py:2614} INFO - Dependencies all met for dep_context=requeueable deps ti=<TaskInstance: lstm_stock_prediction_refactored.generate_predictions manual__2025-04-23T07:04:02.258514+00:00 [queued]>
+[2025-04-23T07:04:35.444+0000] {taskinstance.py:2867} INFO - Starting attempt 1 of 2
+[2025-04-23T07:04:35.458+0000] {taskinstance.py:2890} INFO - Executing <Task(BashOperator): generate_predictions> on 2025-04-23 07:04:02.258514+00:00
+[2025-04-23T07:04:35.463+0000] {standard_task_runner.py:72} INFO - Started process 838 to run task
+[2025-04-23T07:04:35.466+0000] {standard_task_runner.py:104} INFO - Running: ['***', 'tasks', 'run', 'lstm_stock_prediction_refactored', 'generate_predictions', 'manual__2025-04-23T07:04:02.258514+00:00', '--job-id', '107', '--raw', '--subdir', 'DAGS_FOLDER/lstm_refactored_dag.py', '--cfg-path', '/tmp/tmpiy5r4wbm']
+[2025-04-23T07:04:35.469+0000] {standard_task_runner.py:105} INFO - Job 107: Subtask generate_predictions
+[2025-04-23T07:04:35.503+0000] {task_command.py:467} INFO - Running <TaskInstance: lstm_stock_prediction_refactored.generate_predictions manual__2025-04-23T07:04:02.258514+00:00 [running]> on host 7f98232cb4c4
+[2025-04-23T07:04:35.567+0000] {taskinstance.py:3134} INFO - Exporting env vars: AIRFLOW_CTX_DAG_OWNER='***_team' AIRFLOW_CTX_DAG_ID='lstm_stock_prediction_refactored' AIRFLOW_CTX_TASK_ID='generate_predictions' AIRFLOW_CTX_EXECUTION_DATE='2025-04-23T07:04:02.258514+00:00' AIRFLOW_CTX_TRY_NUMBER='1' AIRFLOW_CTX_DAG_RUN_ID='manual__2025-04-23T07:04:02.258514+00:00'
+[2025-04-23T07:04:35.568+0000] {taskinstance.py:732} INFO - ::endgroup::
+[2025-04-23T07:04:35.578+0000] {subprocess.py:78} INFO - Tmp dir root location: /tmp
+[2025-04-23T07:04:35.580+0000] {subprocess.py:88} INFO - Running command: ['/usr/bin/bash', '-c', 'python /opt/***/src/models/predict_model.py --config /opt/***/config/params.yaml']
+[2025-04-23T07:04:35.586+0000] {subprocess.py:99} INFO - Output:
+[2025-04-23T07:04:38.962+0000] {subprocess.py:106} INFO - Downloading artifacts:   0%|          | 0/6 [00:00<?, ?it/s]Downloading artifacts:  17%|█▋        | 1/6 [00:00<00:00, 22550.02it/s]Downloading artifacts:  33%|███▎      | 2/6 [00:00<00:00, 11169.92it/s]Downloading artifacts:  50%|█████     | 3/6 [00:00<00:00, 382.89it/s]  Downloading artifacts:  67%|██████▋   | 4/6 [00:00<00:00, 354.11it/s]Downloading artifacts:  83%|████████▎ | 5/6 [00:00<00:00, 365.87it/s]Downloading artifacts: 100%|██████████| 6/6 [00:00<00:00, 216.16it/s]Downloading artifacts: 100%|██████████| 6/6 [00:00<00:00, 215.16it/s]
+[2025-04-23T07:04:39.003+0000] {subprocess.py:106} INFO - Saved latest predictions to /opt/***/data/predictions/latest_predictions.json
+[2025-04-23T07:04:39.004+0000] {subprocess.py:106} INFO - Saved historical predictions to /opt/***/data/predictions/historical/2025-04-23.json
+[2025-04-23T07:04:39.604+0000] {subprocess.py:110} INFO - Command exited with return code 0
+[2025-04-23T07:04:39.625+0000] {taskinstance.py:341} INFO - ::group::Post task execution logs
+[2025-04-23T07:04:39.626+0000] {taskinstance.py:353} INFO - Marking task as SUCCESS. dag_id=lstm_stock_prediction_refactored, task_id=generate_predictions, run_id=manual__2025-04-23T07:04:02.258514+00:00, execution_date=20250423T070402, start_date=20250423T070435, end_date=20250423T070439
+[2025-04-23T07:04:39.662+0000] {local_task_job_runner.py:266} INFO - Task exited with return code 0
+[2025-04-23T07:04:39.675+0000] {taskinstance.py:3901} INFO - 0 downstream tasks scheduled from follow-on schedule check
+[2025-04-23T07:04:39.677+0000] {local_task_job_runner.py:245} INFO - ::endgroup::

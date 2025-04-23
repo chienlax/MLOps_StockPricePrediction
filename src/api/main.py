@@ -13,11 +13,20 @@ app = FastAPI(
 )
 
 # Các đường dẫn dữ liệu
-PREDICTION_FILE_PATH = Path("data/predictions/latest_predictions.json")
-HISTORICAL_DIR = Path("data/predictions/historical")
+BASE_DATA_PATH_INSIDE_CONTAINER = Path("/opt/airflow/data") # Define base path based on volume mount
+PREDICTION_FILE_PATH = BASE_DATA_PATH_INSIDE_CONTAINER / "predictions/latest_predictions.json"  # Path("data/predictions/latest_predictions.json")
+HISTORICAL_DIR = BASE_DATA_PATH_INSIDE_CONTAINER / "predictions/historical"  # Path("data/predictions/historical")
 
 # Mount thư mục static
-app.mount("/static", StaticFiles(directory="templates/static"), name="static")
+# app.mount("/static", StaticFiles(directory="templates/static"), name="static")
+
+# Mount static folder - Make sure this path is also correct relative to WORKDIR or use absolute
+# If WORKDIR is /app and templates is at /opt/airflow/templates, this needs adjustment
+# Let's assume templates are copied correctly into the image relative to WORKDIR or specified absolutely
+# app.mount("/static", StaticFiles(directory="templates/static"), name="static")
+# templates = Jinja2Templates(directory="templates")
+# If src is mounted at /opt/airflow/src and templates at /opt/airflow/templates:
+app.mount("/static", StaticFiles(directory="/opt/airflow/templates/static"), name="static")
 
 # Cấu hình Jinja2
 templates = Jinja2Templates(directory="templates")
