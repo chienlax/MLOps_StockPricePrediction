@@ -31,7 +31,7 @@ with DAG (
     dag_id='lstm_stock_prediction_refactored',
     default_args=default_args,
     description='Refactored pipeline for LSTM stock prediction',
-    schedule='0 8 * * 1', # Weekly Monday 8 AM UTC
+    schedule='0 8 * * *', # Daily 8 AM UTC
     start_date=pendulum.datetime(2023, 1, 1, tz="UTC"),
     catchup=False,
     tags=['ml', 'lstm', 'refactored', 'mlflow', 'pytorch', 'optuna'],
