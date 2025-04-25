@@ -11,6 +11,8 @@ from pathlib import Path
 import logging
 import os
 import sys
+import sqlite3
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -22,44 +24,109 @@ if not logger.hasHandlers():
     handler.setFormatter(formatter)
     logger.addHandler(handler)
 
-def load_data(tickers_list, period, interval, fetch_delay, output_dir):
-    """Loads data for tickers and saves each as a pickle file."""
-    output_dir = Path(output_dir)
+def setup_database(db_path):
+    """Create SQLite database and tables if they don't exist."""
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
     
-    # --- DEBUGGING ---
-    abs_output_dir = output_dir.resolve() 
-    logger.info(f"Attempting to use RELATIVE output dir: {output_dir}")
-    logger.info(f"Attempting to use ABSOLUTE output dir: {abs_output_dir}")
-    logger.info(f"Current Working Directory inside container: {os.getcwd()}")
-    # --- END DEBUGGING ---
+    # Create raw data table
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS raw_stock_data (
+        id INTEGER PRIMARY KEY,
+        ticker TEXT,
+        date TEXT,
+        open REAL,
+        high REAL,
+        low REAL,
+        close REAL,
+        volume REAL,
+        dividends REAL,
+        stock_splits REAL,
+        UNIQUE(ticker, date)
+    )
+    ''')
+    
+    # Create processed data table
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS processed_data (
+        id INTEGER PRIMARY KEY,
+        date TEXT,
+        data_blob BLOB,
+        UNIQUE(date)
+    )
+    ''')
+    
+    conn.commit()
+    conn.close()
+    
+    logger.info(f"Database initialized at {db_path}")
+    return db_path
 
-    try:
-        logger.info(f"Attempting to create directory: {abs_output_dir}")
-        output_dir.mkdir(parents=True, exist_ok=True)
-        logger.info(f"Successfully called mkdir for: {abs_output_dir} (might not indicate success if permissions are wrong)")
-    except Exception as e:
-         logger.error(f"ERROR during mkdir for {abs_output_dir}: {e}", exc_info=True)
-         # If mkdir fails, we definitely won't save files
-         return 
+def load_data(tickers_list, period, interval, fetch_delay, db_path):
+    """Loads data for tickers and saves each as a pickle file."""
+    db_path = Path(db_path)
+    
+    # # --- DEBUGGING ---
+    # abs_output_dir = output_dir.resolve() 
+    # logger.info(f"Attempting to use RELATIVE output dir: {output_dir}")
+    # logger.info(f"Attempting to use ABSOLUTE output dir: {abs_output_dir}")
+    # logger.info(f"Current Working Directory inside container: {os.getcwd()}")
+    # # --- END DEBUGGING ---
 
-    logger.info(f"Saving raw data to: {abs_output_dir}") # Log the absolute path
+        # Initialize database
+    db_file = setup_database(db_path)
+    conn = sqlite3.connect(db_file)
+    cursor = conn.cursor()
+    
+    logger.info(f"Saving raw data to database: {db_file}")
+
+    # try:
+    #     logger.info(f"Attempting to create directory: {abs_output_dir}")
+    #     output_dir.mkdir(parents=True, exist_ok=True)
+    #     logger.info(f"Successfully called mkdir for: {abs_output_dir} (might not indicate success if permissions are wrong)")
+    # except Exception as e:
+    #      logger.error(f"ERROR during mkdir for {abs_output_dir}: {e}", exc_info=True)
+    #      # If mkdir fails, we definitely won't save files
+    #      return 
+
+    logger.info(f"Saving raw data to database: {db_file}") # Log the absolute path
 
     for t in tickers_list:
-        output_path = output_dir / f"{t}_raw.pkl"
-        if output_path.exists():
-            logger.info(f"Skipping download for {t}, file exists: {output_path}")
+        # output_path = output_dir / f"{t}_raw.pkl"
+        # if output_path.exists():
+        #     logger.info(f"Skipping download for {t}, file exists: {output_path}")
+        #     continue
+
+        # Check if ticker data already exists
+        cursor.execute("SELECT COUNT(*) FROM raw_stock_data WHERE ticker = ?", (t,))
+        if cursor.fetchone()[0] > 0:
+            logger.info(f"Skipping download for {t}, data exists in database")
             continue
+
         try:
             data = yf.Ticker(t).history(period=period, interval=interval)
             if not data.empty:
-                with open(output_path, 'wb') as f:
-                    pickle.dump(data, f)
-                logger.info(f"Loaded and saved raw data for {t} to {output_path}") 
+                # Convert DataFrame to SQLite records
+                for idx, row in data.iterrows():
+                    date_str = idx.strftime('%Y-%m-%d %H:%M:%S')
+                    cursor.execute('''
+                    INSERT OR REPLACE INTO raw_stock_data 
+                    (ticker, date, open, high, low, close, volume, dividends, stock_splits)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (
+                        t, date_str, row['Open'], row['High'], row['Low'], 
+                        row['Close'], row['Volume'], row['Dividends'], row['Stock Splits']
+                    ))
+                
+                conn.commit()
+                logger.info(f"Loaded and saved raw data for {t} to database")
             else:
                 logger.warning(f"No data loaded for {t}")
             time.sleep(fetch_delay)
         except Exception as e:
             logger.error(f"Error loading {t}: {e}", exc_info=True)
+
+    conn.close()
 
 def add_technical_indicators(ticker_data):
     for t in ticker_data:
@@ -190,6 +257,54 @@ def filter_correlated_features(ticker_data, threshold=0.9):
     
     return filtered_ticker_data, features_to_keep
 
+def load_data_from_db(db_path, tickers_list):
+    """Load ticker data from SQLite database into DataFrames."""
+    conn = sqlite3.connect(db_path)
+    ticker_data = {}
+    
+    for t in tickers_list:
+        query = f"SELECT date, open, high, low, close, volume, dividends, stock_splits FROM raw_stock_data WHERE ticker = '{t}' ORDER BY date"
+        df = pd.read_sql_query(query, conn, parse_dates=['date'])
+        df.set_index('date', inplace=True)
+        
+        df.columns = ['Open', 'High', 'Low', 'Close', 'Volume', 'Dividends', 'Stock Splits']
+        
+        if not df.empty:
+            ticker_data[t] = df
+        else:
+            logger.warning(f"No data found in database for {t}")
+    
+    conn.close()
+    return ticker_data
+
+def save_processed_data_to_db(db_path, processed_data, targets, feature_columns, tickers):
+    """Save processed data to SQLite database."""
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    
+    # Serialize the data using pickle
+    data_blob = pickle.dumps({
+        'processed_data': processed_data,
+        'targets': targets,
+        'feature_columns': feature_columns,
+        'tickers': tickers
+    })
+    
+    # Use current date as identifier
+    current_date = datetime.now().strftime('%Y-%m-%d')
+    
+    # Insert or replace
+    cursor.execute('''
+    INSERT OR REPLACE INTO processed_data (date, data_blob)
+    VALUES (?, ?)
+    ''', (current_date, data_blob))
+    
+    conn.commit()
+    conn.close()
+    
+    logger.info(f"Successfully saved processed data to database with date: {current_date}")
+
+
 def run_processing(config_path: str):
     """Main function to run all data processing steps."""
     try:
@@ -198,12 +313,16 @@ def run_processing(config_path: str):
         logger.debug(f"Loaded parameters: {params}") # Use logger.debug for verbose info
 
         # Define paths from config
-        raw_data_dir = Path(params['output_paths']['raw_data_template']).parent
-        processed_output_path = Path(params['output_paths']['processed_data_path'])
-        processed_output_path.parent.mkdir(parents=True, exist_ok=True)
+        # raw_data_dir = Path(params['output_paths']['raw_data_template']).parent
+        # processed_output_path = Path(params['output_paths']['processed_data_path'])
+        # processed_output_path.parent.mkdir(parents=True, exist_ok=True)
 
-        logger.info(f"Raw data directory: {raw_data_dir}")
-        logger.info(f"Processed data output path: {processed_output_path}")
+        # logger.info(f"Raw data directory: {raw_data_dir}")
+        # logger.info(f"Processed data output path: {processed_output_path}")
+        db_path = Path(params['output_paths']['database_path'])
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+
+        logger.info(f"Database path: {db_path}")
 
         tickers_list = params['data_loading']['tickers']
         period = params['data_loading']['period']
@@ -212,19 +331,25 @@ def run_processing(config_path: str):
         corr_threshold = params['feature_engineering']['correlation_threshold']
 
         # 1. Load Raw Data (or ensure it's downloaded)
+        # logger.info("--- Starting Data Loading ---")
+        # load_data(tickers_list, period, interval, fetch_delay, raw_data_dir)
+        # logger.info("--- Finished Data Loading ---")
         logger.info("--- Starting Data Loading ---")
-        load_data(tickers_list, period, interval, fetch_delay, raw_data_dir)
+        load_data(tickers_list, period, interval, fetch_delay, db_path)
         logger.info("--- Finished Data Loading ---")
 
         # Load from saved pickles
-        ticker_data = {}
-        for t in tickers_list:
-            raw_path = raw_data_dir / f"{t}_raw.pkl"
-            if raw_path.exists():
-                with open(raw_path, 'rb') as f:
-                    ticker_data[t] = pickle.load(f)
-            else:
-                logger.warning(f"Raw data file not found for {t} at {raw_path}")
+        # ticker_data = {}
+        # for t in tickers_list:
+        #     raw_path = raw_data_dir / f"{t}_raw.pkl"
+        #     if raw_path.exists():
+        #         with open(raw_path, 'rb') as f:
+        #             ticker_data[t] = pickle.load(f)
+        #     else:
+        #         logger.warning(f"Raw data file not found for {t} at {raw_path}")
+
+        ticker_data = load_data_from_db(db_path, tickers_list)
+
 
         # Filter out any tickers where data wasn't loaded
         ticker_data = {k: v for k, v in ticker_data.items() if v is not None and not v.empty}
@@ -268,25 +393,39 @@ def run_processing(config_path: str):
         #         raise # Re-raise the exception so Airflow task fails
         # logger.info("--- Finished Saving Processed Data ---")
 
-        absolute_save_path = processed_output_path.resolve()
-        logger.info(f"Attempting to save to absolute path: {absolute_save_path}")
+        # absolute_save_path = processed_output_path.resolve()
+        # logger.info(f"Attempting to save to absolute path: {absolute_save_path}")
+        # try:
+        #     np.savez(
+        #         processed_output_path,
+        #         processed_data=processed_data,
+        #         targets=targets,
+        #         feature_columns=np.array(feature_columns, dtype=object),
+        #         tickers=np.array(final_tickers, dtype=object)
+        #     )
+        #     logger.info(f"Successfully saved processed data to {processed_output_path}")
+        #     # Add an existence check right after saving
+        #     if absolute_save_path.exists():
+        #         logger.info(f"Verified file exists at: {absolute_save_path}")
+        #     else:
+        #         logger.error(f"!!! File DOES NOT exist immediately after saving at: {absolute_save_path}")
+        # except Exception as e:
+        #     logger.error(f"Failed to save processed data to {processed_output_path}", exc_info=True)
+        #     raise
+        logger.info(f"--- Saving Processed Data to database ---")
         try:
-            np.savez(
-                processed_output_path,
-                processed_data=processed_data,
-                targets=targets,
-                feature_columns=np.array(feature_columns, dtype=object),
-                tickers=np.array(final_tickers, dtype=object)
+            save_processed_data_to_db(
+                db_path, 
+                processed_data,
+                targets,
+                feature_columns,
+                final_tickers
             )
-            logger.info(f"Successfully saved processed data to {processed_output_path}")
-            # Add an existence check right after saving
-            if absolute_save_path.exists():
-                logger.info(f"Verified file exists at: {absolute_save_path}")
-            else:
-                logger.error(f"!!! File DOES NOT exist immediately after saving at: {absolute_save_path}")
+            logger.info(f"Successfully saved processed data to database")
         except Exception as e:
-            logger.error(f"Failed to save processed data to {processed_output_path}", exc_info=True)
+            logger.error(f"Failed to save processed data to database", exc_info=True)
             raise
+        logger.info("--- Finished Saving Processed Data ---")
 
 
     except Exception as e:
@@ -296,11 +435,24 @@ def run_processing(config_path: str):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', type=str, 
-                        required=True, help='Path to the configuration file (params.yaml)')
-    args = parser.parse_args()
+                        required=True,
+                        help='Path to the configuration file (params.yaml)')
+    # args = parser.parse_args()
 
-    logger.info(f"Starting data processing script with config: {args.config}")
+    # Check if arguments were passed
+    if len(sys.argv) == 1:
+        # No arguments, use default config path
+        config_path = 'params.yaml'
+        logger.info(f"No config specified, using default: {config_path}")
+    else:
+        # Parse arguments normally
+        args = parser.parse_args()
+        config_path = args.config
+
+    # logger.info(f"Starting data processing script with config: {args.config}")
+    logger.info(f"Starting data processing script with config: {config_path}")
     print("--- PRINT TEST: Starting Data Loading ---")
 
-    run_processing(args.config)
+    # run_processing(args.config)
+    run_processing(config_path)
     logger.info("Data processing script finished.")
