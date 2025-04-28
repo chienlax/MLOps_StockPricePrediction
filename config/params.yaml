@@ -17,13 +17,20 @@ optimization:
 training:
   epochs: 5    # Epochs for final training
 
+database:
+  dbname: 'stock_prediction'
+  user: 'admin' #Not remember
+  password: 'admin'
+  host: 'localhost'
+  port: '5432'
+
 output_paths:
   # Use ABSOLUTE paths inside the container that point to the mounted volume - if you want to use relative paths, you need to mount the volume accordingly. If not, the data crawled will not appear in your local directory.
   raw_data_template: "/opt/airflow/data/raw/{ticker}_raw.pkl"
-  processed_data_path: "/opt/airflow/data/processed/all_processed_data.npz" # Saving as numpy archive
-  scalers_path: "/opt/airflow/data/processed/scalers.pkl"
-  split_data_path: "/opt/airflow/data/features/split_scaled_data.npz"
-  best_params_path: "/opt/airflow/config/best_params.json" # Config might also need absolute if written by a task
+  # processed_data_path: "/opt/airflow/data/processed/all_processed_data.npz" # Saving as numpy archive
+  # scalers_path: "/opt/airflow/data/processed/scalers.pkl"
+  # split_data_path: "/opt/airflow/data/features/split_scaled_data.npz"
+  # best_params_path: "/opt/airflow/config/best_params.json" # Config might also need absolute if written by a task
   # Note: We are mounting ./config to /opt/airflow/config, so this path for best_params is correct
 
 mlflow:

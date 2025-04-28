@@ -8,10 +8,11 @@ x-airflow-common: &airflow-common
     - .env # Load environment variables from .env file
   environment:
     &airflow-common-env
-    AIRFLOW__CORE__EXECUTOR: LocalExecutor  # CeleryExecutor Or LocalExecutor for simpler setup initially
+    AIRFLOW__CORE__EXECUTOR:   LocalExecutor  # CeleryExecutor Or LocalExecutor for simpler setup initially
     AIRFLOW__CORE__LOAD_EXAMPLES: 'false' # Disable example DAGs
+    # AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: sqlite:////opt/airflow/airflow.db
     AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
-    #AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+    AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
     # Point Airflow to the MLflow server within the Docker network
     AIRFLOW__MLFLOW__TRACKING_URI: ${MLFLOW_TRACKING_URI:-http://mlflow-server:5000}
     MLFLOW_TRACKING_URI: ${MLFLOW_TRACKING_URI:-http://mlflow-server:5000} # We add MLFLOW_TRACKING_URI explicitly because while AIRFLOW__MLFLOW__TRACKING_URI configures Airflow's internal MLflow hook/provider, your custom script needs a standard environment variable to read
@@ -23,6 +24,7 @@ x-airflow-common: &airflow-common
     - ./src:/opt/airflow/src:ro # Mount project source code (read-only)
     - ./data:/opt/airflow/data:rw # Mount project data folder (read-write)
     - ./config:/opt/airflow/config:rw # Mount config folder (read-only)
+    # - airflow-db-volume:/opt/airflow/airflow.db
   user: "${AIRFLOW_UID:-1000}:0" # Ensures container runs as host user (adjust UID if needed, GID 0 for root group often works)
   depends_on:
     postgres:
@@ -118,25 +120,27 @@ services:
   #     timeout: 30s
   #     retries: 5
 
-  # airflow-init:
-  #   <<: *airflow-common
-  #   container_name: stockpred-airflow-init
-  #   entrypoint: /bin/bash
-  #   command:
-  #     - -c
-  #     - |
-  #       airflow db init && \
-  #       airflow users create \
-  #         --username admin \
-  #         --firstname Admin \
-  #         --lastname User \
-  #         --role Admin \
-  #         --email admin@example.com \
-  #         --password admin # CHANGE THIS PASSWORD!
-  #   restart: on-failure
+  airflow-init:
+    <<: *airflow-common
+    container_name: stockpred-airflow-init
+    # Remove custom entrypoint to use the default one from the image
+    command:
+      - bash
+      - -c
+      - |
+        airflow db init && \
+        airflow users create \
+          --username admin \
+          --firstname Admin \
+          --lastname User \
+          --role Admin \
+          --email admin@example.com \
+          --password admin
+    # restart: on-failure
 
 
 volumes:
   airflow-db-volume:
   airflow-mlflow-volume:
+  
   # airflow-redis-volume: # Needed for CeleryExecutor
