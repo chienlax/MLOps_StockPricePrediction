@@ -43,7 +43,7 @@ with DAG(
     dag_id='lstm_stock_prediction_db',
     default_args=default_args,
     description='Database-backed pipeline for LSTM stock prediction',
-    schedule='0 8 * * 1',  # Weekly Monday 8 AM UTC
+    schedule='0 8 * * *',  # Weekly Monday 8 AM UTC
     start_date=pendulum.datetime(2023, 1, 1, tz="UTC"),
     catchup=False,
     tags=['ml', 'lstm', 'database', 'mlflow', 'pytorch', 'optuna'],
