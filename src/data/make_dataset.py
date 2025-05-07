@@ -253,7 +253,8 @@ def filter_correlated_features(ticker_data, threshold=0.9):
         return ticker_data, list(ticker_data[list(ticker_data.keys())[0]].columns)
 
 
-def run_processing(config_path: str):
+def run_processing(config_path: str, mode: str = 'full_process') -> Optional[str]:
+
     """Main function to run all data processing steps."""
     try:
         with open(config_path, 'r') as f:
@@ -310,21 +311,71 @@ def run_processing(config_path: str):
         raise
 
 if __name__ == '__main__':
-    try:
-        parser = argparse.ArgumentParser()
-        parser.add_argument('--config', type=str, 
-                          required=False,
-                          help='Path to the configuration file (params.yaml)')
+    # try:
+    #     parser = argparse.ArgumentParser()
+    #     parser.add_argument('--config', type=str, 
+    #                       required=False,
+    #                       help='Path to the configuration file (params.yaml)')
 
-        # Check if arguments were passed
-        if len(sys.argv) == 1:
-            # No arguments, use default config path
-            config_path = 'params.yaml'
-            logger.info(f"No config specified, using default: {config_path}")
-        else:
-            # Parse arguments normally
-            args = parser.parse_args()
-            config_path = args.config
+    #     # Check if arguments were passed
+    #     if len(sys.argv) == 1:
+    #         # No arguments, use default config path
+    #         config_path = 'params.yaml'
+    #         logger.info(f"No config specified, using default: {config_path}")
+    #     else:
+    #         # Parse arguments normally
+    #         args = parser.parse_args()
+    #         config_path = args.config
+
+    #     # Verify config file exists
+    #     if not os.path.exists(config_path):
+    #         logger.error(f"Configuration file not found: {config_path}")
+    #         sys.exit(1)
+
+    #     # Verify database configuration exists
+    #     with open(config_path, 'r') as f:
+    #         config = yaml.safe_load(f)
+    #         if 'database' not in config:
+    #             logger.error("Database configuration missing from params.yaml")
+    #             sys.exit(1)
+    #         required_db_fields = ['dbname', 'user', 'password', 'host', 'port']
+    #         missing_fields = [field for field in required_db_fields if field not in config['database']]
+    #         if missing_fields:
+    #             logger.error(f"Missing required database configuration fields: {missing_fields}")
+    #             sys.exit(1)
+
+    #     logger.info(f"Starting data processing script with config: {config_path}")
+    #     logger.info(f"Using PostgreSQL database at {config['database']['host']}:{config['database']['port']}")
+
+    #     run_processing(config_path)
+    #     logger.info("Data processing script finished successfully.")
+        
+    # except yaml.YAMLError as e:
+    #     logger.error(f"Error parsing configuration file: {e}", exc_info=True)
+    #     sys.exit(1)
+    # except Exception as e:
+    #     logger.error(f"Fatal error in data processing script: {e}", exc_info=True)
+    #     sys.exit(1)
+
+    # -----------------------
+    try:
+        parser = argparse.ArgumentParser(description="Data processing script for stock prediction.")
+        parser.add_argument(
+            '--config',
+            type=str,
+            default='config/params.yaml', # Default path relative to project root
+            help='Path to the configuration file (params.yaml)'
+        )
+        parser.add_argument(
+            '--mode',
+            type=str,
+            choices=['incremental_fetch', 'full_process'],
+            default='full_process', # Default to full processing if not specified
+            help='Operation mode: "incremental_fetch" for daily raw data, "full_process" for complete training dataset generation.'
+        )
+        args = parser.parse_args()
+        config_path = args.config
+        mode = args.mode
 
         # Verify config file exists
         if not os.path.exists(config_path):
@@ -343,11 +394,22 @@ if __name__ == '__main__':
                 logger.error(f"Missing required database configuration fields: {missing_fields}")
                 sys.exit(1)
 
-        logger.info(f"Starting data processing script with config: {config_path}")
-        logger.info(f"Using PostgreSQL database at {config['database']['host']}:{config['database']['port']}")
-
-        run_processing(config_path)
-        logger.info("Data processing script finished successfully.")
+        logger.info(f"Starting data processing script with config: {config_path} in mode: {mode}")
+        
+        # Call run_processing with the mode
+        # run_processing needs to be adapted to handle the mode and return run_id for 'full_process'
+        if mode == 'full_process':
+            # This function will now need to return the run_id
+            generated_run_id = run_processing(config_path, mode=mode)
+            if generated_run_id:
+                print(f"Full processing completed. Dataset run_id: {generated_run_id}")
+            else:
+                logger.error("Full processing did not return a run_id.")
+                sys.exit(1)
+        else: # incremental_fetch
+            run_processing(config_path, mode=mode)
+        
+        logger.info(f"Data processing script (mode: {mode}) finished successfully.")
         
     except yaml.YAMLError as e:
         logger.error(f"Error parsing configuration file: {e}", exc_info=True)

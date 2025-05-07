@@ -2,20 +2,20 @@ data_loading:
   tickers: ['AAPL', 'MA', 'CSCO', 'MSFT', 'AMZN', 'GOOG', 'IBM']
   period: "3y"
   interval: "1d"
-  fetch_delay: 5 # seconds between ticker fetches
+  fetch_delay: 5
 
 feature_engineering:
   correlation_threshold: 0.9
   sequence_length: 30
-  prediction_length: 1 # Currently only supporting 1-day ahead from the refactored logic
+  prediction_length: 1 # Currently only supporting 1-day ahead
 
 optimization:
-  n_trials: 1 # Optuna trials
-  epochs: 5   # Epochs during optimization
+  n_trials: 1
+  epochs: 5 
   patience: 5
 
 training:
-  epochs: 5    # Epochs for final training
+  epochs: 5
 
 database:
   dbname: 'stock_prediction'
@@ -28,7 +28,6 @@ monitoring:
   performance_thresholds:
     mape_max: 0.10        # Threshold: Max 7% MAPE
     direction_accuracy_min: 0.55 # Threshold: Min 53% directional accuracy
-    # Add rmse_max if you want to monitor it, e.g., rmse_max: 1.5
   evaluation_lag_days: 1 # How many days to wait for actuals (e.g., T+1 for stock prices)
 
 airflow_dags:
