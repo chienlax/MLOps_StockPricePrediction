@@ -12,15 +12,28 @@ import logging
 import os
 import sys
 from datetime import datetime
-from utils.db_utils import (
-    setup_database,
-    check_ticker_exists,
-    save_to_raw_table,
-    load_data_from_db,
-    save_processed_data_to_db,
-    save_processed_features_to_db,
-    get_db_connection
-)
+
+try:
+    from src.utils.db_utils import (
+        setup_database,
+        check_ticker_exists, 
+        save_to_raw_table,
+        load_data_from_db,
+        save_processed_features_to_db,
+        get_last_data_timestamp_for_ticker,
+        get_db_connection 
+    )
+except ImportError:
+    sys.path.append(str(Path(__file__).resolve().parents[1])) # Add 'src' to path
+    from utils.db_utils import (
+        setup_database,
+        check_ticker_exists,
+        save_to_raw_table,
+        load_data_from_db,
+        save_processed_features_to_db,
+        get_last_data_timestamp_for_ticker,
+        get_db_connection
+    )
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
