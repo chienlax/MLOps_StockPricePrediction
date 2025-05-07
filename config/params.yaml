@@ -24,6 +24,18 @@ database:
   host: 'localhost'
   port: '5432'
 
+monitoring:
+  performance_thresholds:
+    mape_max: 0.10        # Threshold: Max 7% MAPE
+    direction_accuracy_min: 0.55 # Threshold: Min 53% directional accuracy
+    # Add rmse_max if you want to monitor it, e.g., rmse_max: 1.5
+  evaluation_lag_days: 1 # How many days to wait for actuals (e.g., T+1 for stock prices)
+
+airflow_dags:
+  daily_operations_dag_id: "daily_stock_operations"
+  retraining_pipeline_dag_id: "stock_model_retraining_pipeline"
+
+
 output_paths:
   # Use ABSOLUTE paths inside the container that point to the mounted volume - if you want to use relative paths, you need to mount the volume accordingly. If not, the data crawled will not appear in your local directory.
   raw_data_template: "/opt/airflow/data/raw/{ticker}_raw.pkl"

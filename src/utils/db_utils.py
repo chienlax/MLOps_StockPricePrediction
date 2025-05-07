@@ -9,6 +9,10 @@ import pandas as pd
 from pathlib import Path
 from datetime import datetime
 from typing import Optional
+from typing import Dict
+from typing import Any
+from typing import List
+from datetime import timedelta 
 
 logger = logging.getLogger(__name__)
 if not logger.hasHandlers():
@@ -33,6 +37,7 @@ def get_db_connection(db_config: dict) -> psycopg2.extensions.connection:
         logger.error(f"Error connecting to PostgreSQL database: {e}")
         raise
 
+# Create database tables if they don't exist
 def setup_database(db_config: dict) -> None:
     """Create PostgreSQL database tables if they don't exist."""
     try:
@@ -109,6 +114,25 @@ def setup_database(db_config: dict) -> None:
             optimization_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
         ''')
+
+        # add performance log table
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS model_performance_log (
+            log_id SERIAL PRIMARY KEY,
+            prediction_date DATE NOT NULL,
+            ticker TEXT NOT NULL,
+            actual_price REAL,
+            predicted_price REAL,
+            mae REAL,
+            rmse REAL,
+            mape REAL,
+            direction_accuracy REAL,
+            model_mlflow_run_id TEXT,
+            evaluation_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE (prediction_date, ticker, model_mlflow_run_id)
+        )
+        ''')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_perf_log_date_ticker ON model_performance_log (prediction_date, ticker)')
         
         conn.commit()
         cursor.close()
@@ -160,7 +184,6 @@ def save_to_raw_table(ticker: str, data: pd.DataFrame, db_config: dict) -> int:
     except Exception as e:
         logger.error(f"Error saving data to raw table: {e}")
         raise
-
 
 def serialize_numpy(array: np.ndarray) -> bytes:
     """Serialize numpy array to bytes using pickle."""
@@ -516,3 +539,151 @@ def get_latest_predictions(db_config: dict, tickers: Optional[list] = None) -> d
     except Exception as e:
         logger.error(f"Error getting latest predictions: {e}", exc_info=True)
         raise
+
+# Save daily performance metrics to the database
+def save_daily_performance_metrics(
+    db_config: dict,
+    prediction_date: str, # Expecting 'YYYY-MM-DD' string
+    ticker: str,
+    metrics_dict: Dict[str, float],
+    model_mlflow_run_id: str
+) -> bool:
+    """Save daily model performance metrics to the database."""
+    try:
+        conn = get_db_connection(db_config)
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+        INSERT INTO model_performance_log
+        (prediction_date, ticker, actual_price, predicted_price, mae, rmse, mape, direction_accuracy, model_mlflow_run_id)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        ON CONFLICT (prediction_date, ticker, model_mlflow_run_id) DO UPDATE SET
+            actual_price = EXCLUDED.actual_price,
+            predicted_price = EXCLUDED.predicted_price,
+            mae = EXCLUDED.mae,
+            rmse = EXCLUDED.rmse,
+            mape = EXCLUDED.mape,
+            direction_accuracy = EXCLUDED.direction_accuracy,
+            evaluation_timestamp = CURRENT_TIMESTAMP
+        ''', (
+            prediction_date,
+            ticker,
+            metrics_dict.get('actual_price'),
+            metrics_dict.get('predicted_price'),
+            metrics_dict.get('mae'),
+            metrics_dict.get('rmse'),
+            metrics_dict.get('mape'),
+            metrics_dict.get('direction_accuracy'),
+            model_mlflow_run_id
+        ))
+        
+        conn.commit()
+        logger.info(f"Saved performance metrics for {ticker} on {prediction_date} (Model Run ID: {model_mlflow_run_id})")
+        return True
+    except Exception as e:
+        logger.error(f"Error saving daily performance metrics for {ticker} on {prediction_date}: {e}", exc_info=True)
+        # Consider re-raising or returning False based on desired error handling
+        # For now, let's re-raise to make issues visible during development
+        raise
+    finally:
+        if 'conn' in locals() and conn:
+            cursor.close()
+            conn.close()
+
+# Get recent performance metrics for a ticker
+def get_recent_performance_metrics(db_config: dict, ticker: str, days_lookback: int) -> pd.DataFrame:
+    """Retrieve recent performance metrics for a ticker."""
+    try:
+        conn = get_db_connection(db_config)
+        end_date = datetime.now().date()
+        start_date = end_date - timedelta(days=days_lookback)
+        
+        query = """
+            SELECT prediction_date, actual_price, predicted_price, mae, rmse, mape, direction_accuracy, model_mlflow_run_id
+            FROM model_performance_log
+            WHERE ticker = %s AND prediction_date >= %s AND prediction_date <= %s
+            ORDER BY prediction_date DESC
+        """
+        df = pd.read_sql_query(query, conn, params=(ticker, start_date, end_date))
+        
+        logger.info(f"Retrieved {len(df)} recent performance records for {ticker} (last {days_lookback} days)")
+        return df
+    except Exception as e:
+        logger.error(f"Error getting recent performance metrics for {ticker}: {e}", exc_info=True)
+        raise
+    finally:
+        if 'conn' in locals() and conn:
+            conn.close()
+
+def get_last_data_timestamp_for_ticker(db_config: dict, ticker: str) -> Optional[datetime]:
+    """Get the timestamp of the latest data point for a ticker in raw_stock_data."""
+    try:
+        conn = get_db_connection(db_config)
+        cursor = conn.cursor()
+        
+        cursor.execute("SELECT MAX(date) FROM raw_stock_data WHERE ticker = %s", (ticker,))
+        result = cursor.fetchone()
+        
+        if result and result[0]:
+            logger.debug(f"Last data timestamp for {ticker}: {result[0]}")
+            return result[0] # This will be a datetime object if 'date' column is TIMESTAMP
+        else:
+            logger.info(f"No data found for {ticker}, will fetch full history.")
+            return None
+    except Exception as e:
+        logger.error(f"Error getting last data timestamp for {ticker}: {e}", exc_info=True)
+        raise
+    finally:
+        if 'conn' in locals() and conn:
+            cursor.close()
+            conn.close()
+
+def get_latest_raw_data_window(db_config: dict, tickers_list: list, window_size_days: int) -> dict:
+    """
+    Load the most recent 'window_size_days' of raw data for specified tickers.
+    Returns a dictionary of DataFrames {ticker: df}.
+    """
+    try:
+        conn = get_db_connection(db_config)
+        ticker_data_window = {}
+        
+        for t in tickers_list:
+            # Fetch a bit more to ensure we have enough after potential gaps, then take tail
+            # For simplicity, let's fetch N days and sort, then take tail.
+            # A more optimized SQL might use window functions or `ORDER BY date DESC LIMIT N`.
+            query = """
+                SELECT date, open, high, low, close, volume, dividends, stock_splits 
+                FROM raw_stock_data 
+                WHERE ticker = %s 
+                ORDER BY date DESC
+                LIMIT %s 
+            """ 
+            # Fetch slightly more if TA calculations need prior data points not included in window_size_days
+            # For now, let's assume window_size_days is sufficient for TA on that window.
+            df = pd.read_sql_query(query, conn, params=(t, window_size_days), parse_dates=['date'])
+            
+            if df.empty:
+                logger.warning(f"No raw data found in DB for {t} to create latest window.")
+                continue
+            
+            # The query already sorts DESC, so we need to re-sort ASC for time series processing
+            df = df.sort_values(by='date', ascending=True).set_index('date')
+            df.columns = ['Open', 'High', 'Low', 'Close', 'Volume', 'Dividends', 'Stock Splits']
+            
+            if len(df) < window_size_days:
+                logger.warning(f"Fetched {len(df)} records for {t}, less than requested window {window_size_days}.")
+
+            ticker_data_window[t] = df
+            logger.info(f"Loaded latest {len(df)} records for {t} for prediction input.")
+        
+        if not ticker_data_window:
+            logger.error("No data loaded for any ticker for the latest window.")
+            # Depending on strictness, you might raise an error here
+        
+        return ticker_data_window
+    except Exception as e:
+        logger.error(f"Error loading latest raw data window: {e}", exc_info=True)
+        raise
+    finally:
+        if 'conn' in locals() and conn:
+            conn.close()

@@ -1,5 +1,3 @@
-# version: "3.9"
-
 x-airflow-common: &airflow-common
   build: .
   env_file:
@@ -95,12 +93,8 @@ services:
       - ./templates:/opt/airflow/templates:ro # Mount templates read-only
     environment:
       - PYTHONPATH=/opt/airflow
-    # env_file:
-    #   - .env # If API needs environment variables
     depends_on:
       - airflow-webserver
-    #   - mlflow-server # Optional
-    #   - airflow-scheduler # Optional
 
 volumes:
   airflow-db-volume:
