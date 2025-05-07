@@ -11,8 +11,29 @@ from pathlib import Path
 import logging
 import os
 import sys
-import sqlite3
 from datetime import datetime
+
+try:
+    from src.utils.db_utils import (
+        setup_database,
+        check_ticker_exists, 
+        save_to_raw_table,
+        load_data_from_db,
+        save_processed_features_to_db,
+        get_last_data_timestamp_for_ticker,
+        get_db_connection 
+    )
+except ImportError:
+    sys.path.append(str(Path(__file__).resolve().parents[1])) # Add 'src' to path
+    from utils.db_utils import (
+        setup_database,
+        check_ticker_exists,
+        save_to_raw_table,
+        load_data_from_db,
+        save_processed_features_to_db,
+        get_last_data_timestamp_for_ticker,
+        get_db_connection
+    )
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -24,109 +45,42 @@ if not logger.hasHandlers():
     handler.setFormatter(formatter)
     logger.addHandler(handler)
 
-def setup_database(db_path):
-    """Create SQLite database and tables if they don't exist."""
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    
-    # Create raw data table
-    cursor.execute('''
-    CREATE TABLE IF NOT EXISTS raw_stock_data (
-        id INTEGER PRIMARY KEY,
-        ticker TEXT,
-        date TEXT,
-        open REAL,
-        high REAL,
-        low REAL,
-        close REAL,
-        volume REAL,
-        dividends REAL,
-        stock_splits REAL,
-        UNIQUE(ticker, date)
-    )
-    ''')
-    
-    # Create processed data table
-    cursor.execute('''
-    CREATE TABLE IF NOT EXISTS processed_data (
-        id INTEGER PRIMARY KEY,
-        date TEXT,
-        data_blob BLOB,
-        UNIQUE(date)
-    )
-    ''')
-    
-    conn.commit()
-    conn.close()
-    
-    logger.info(f"Database initialized at {db_path}")
-    return db_path
 
-def load_data(tickers_list, period, interval, fetch_delay, db_path):
-    """Loads data for tickers and saves each as a pickle file."""
-    db_path = Path(db_path)
-    
-    # # --- DEBUGGING ---
-    # abs_output_dir = output_dir.resolve() 
-    # logger.info(f"Attempting to use RELATIVE output dir: {output_dir}")
-    # logger.info(f"Attempting to use ABSOLUTE output dir: {abs_output_dir}")
-    # logger.info(f"Current Working Directory inside container: {os.getcwd()}")
-    # # --- END DEBUGGING ---
-
+def load_data(tickers_list, period, interval, fetch_delay, db_config):
+    """Loads data for tickers and saves to PostgreSQL database."""
+    try:
         # Initialize database
-    db_file = setup_database(db_path)
-    conn = sqlite3.connect(db_file)
-    cursor = conn.cursor()
-    
-    logger.info(f"Saving raw data to database: {db_file}")
+        setup_database(db_config)
+        logger.info("Initializing PostgreSQL database connection")
 
-    # try:
-    #     logger.info(f"Attempting to create directory: {abs_output_dir}")
-    #     output_dir.mkdir(parents=True, exist_ok=True)
-    #     logger.info(f"Successfully called mkdir for: {abs_output_dir} (might not indicate success if permissions are wrong)")
-    # except Exception as e:
-    #      logger.error(f"ERROR during mkdir for {abs_output_dir}: {e}", exc_info=True)
-    #      # If mkdir fails, we definitely won't save files
-    #      return 
+        for t in tickers_list:
+            # Check if ticker data already exists
+            if check_ticker_exists(t, db_config):
+                logger.info(f"Skipping download for {t}, data exists in database")
+                continue
 
-    logger.info(f"Saving raw data to database: {db_file}") # Log the absolute path
-
-    for t in tickers_list:
-        # output_path = output_dir / f"{t}_raw.pkl"
-        # if output_path.exists():
-        #     logger.info(f"Skipping download for {t}, file exists: {output_path}")
-        #     continue
-
-        # Check if ticker data already exists
-        cursor.execute("SELECT COUNT(*) FROM raw_stock_data WHERE ticker = ?", (t,))
-        if cursor.fetchone()[0] > 0:
-            logger.info(f"Skipping download for {t}, data exists in database")
-            continue
-
-        try:
-            data = yf.Ticker(t).history(period=period, interval=interval)
-            if not data.empty:
-                # Convert DataFrame to SQLite records
-                for idx, row in data.iterrows():
-                    date_str = idx.strftime('%Y-%m-%d %H:%M:%S')
-                    cursor.execute('''
-                    INSERT OR REPLACE INTO raw_stock_data 
-                    (ticker, date, open, high, low, close, volume, dividends, stock_splits)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ''', (
-                        t, date_str, row['Open'], row['High'], row['Low'], 
-                        row['Close'], row['Volume'], row['Dividends'], row['Stock Splits']
-                    ))
+            try:
+                logger.info(f"Downloading data for {t}")
+                data = yf.Ticker(t).history(period=period, interval=interval)
                 
-                conn.commit()
-                logger.info(f"Loaded and saved raw data for {t} to database")
-            else:
-                logger.warning(f"No data loaded for {t}")
-            time.sleep(fetch_delay)
-        except Exception as e:
-            logger.error(f"Error loading {t}: {e}", exc_info=True)
+                if data.empty:
+                    logger.warning(f"No data available for {t}")
+                    continue
+                    
+                # Log the data shape for debugging
+                logger.info(f"Downloaded {len(data)} records for {t}")
+                
+                # Save to database
+                save_to_raw_table(t, data, db_config)
+                time.sleep(fetch_delay)
+                
+            except Exception as e:
+                logger.error(f"Error loading {t}: {e}", exc_info=True)
+                continue
 
-    conn.close()
+    except Exception as e:
+        logger.error(f"Error in load_data function: {e}", exc_info=True)
+        raise
 
 def add_technical_indicators(ticker_data):
     for t in ticker_data:
@@ -177,152 +131,157 @@ def add_technical_indicators(ticker_data):
     return ticker_data
 
 def preprocess_data(df):
-    # Fill forward then backward to handle NaNs
-    # df = df.fillna(method='ffill').fillna(method='bfill')
-    df = df.ffill().bfill()
-    # Create target variable (next day's close price)
-    df['Target'] = df['Close'].shift(-1)
-    # Drop the last row since it will have NaN target
-    df = df.dropna()
-    return df
+    try:
+        original_shape = df.shape
+        # Fill forward then backward to handle NaNs
+        df = df.ffill().bfill()
+        
+        # Check if we have NaNs after filling
+        nan_count = df.isna().sum().sum()
+        if nan_count > 0:
+            logger.warning(f"Still have {nan_count} NaN values after fill forward/backward")
+            
+        # Create target variable (next day's close price)
+        df['Target'] = df['Close'].shift(-1)
+        
+        # Drop the last row since it will have NaN target
+        df = df.dropna()
+        
+        logger.debug(f"Preprocessed data shape changed from {original_shape} to {df.shape}")
+        return df
+        
+    except Exception as e:
+        logger.error(f"Error in preprocess_data: {e}", exc_info=True)
+        raise
 
 def align_and_process_data(ticker_data):
-    tickers = list(ticker_data.keys())
-    
-    ticker_data = {t: preprocess_data(df) for t, df in ticker_data.items()}
-    
-    all_indices = set().union(*[ticker_data[d].index for d in ticker_data])
-    aligned_data = {}
-    
-    for t in tickers:
-        aligned_data[t] = ticker_data[t].reindex(index=all_indices).sort_index()
-    
-    # Get feature columns (excluding Target)
-    first_ticker = tickers[0]
-    feature_columns = [col for col in aligned_data[first_ticker].columns if col != 'Target']
-    num_features = len(feature_columns)
-    num_stocks = len(tickers)
-    
-    # Create 3D arrays: (timesteps, stocks, features)
-    processed_data = np.zeros((len(all_indices), num_stocks, num_features))
-    targets = np.zeros((len(all_indices), num_stocks))
-    
-    for i, ticker in enumerate(tickers):
-        df = aligned_data[ticker][feature_columns + ['Target']].fillna(method='ffill').fillna(method='bfill')
-        processed_data[:, i, :] = df[feature_columns].values
-        targets[:, i] = df['Target'].values
-    
-    # Clean any remaining NaNs
-    nan_mask = np.isnan(processed_data).any(axis=(1, 2)) | np.isnan(targets).any(axis=1)
-    processed_data = processed_data[~nan_mask]
-    targets = targets[~nan_mask]
-    
-    return processed_data, targets, feature_columns, tickers
+    try:
+        tickers = list(ticker_data.keys())
+        logger.info(f"Aligning and processing data for {len(tickers)} tickers")
+        
+        ticker_data = {t: preprocess_data(df) for t, df in ticker_data.items()}
+        
+        all_indices = set().union(*[ticker_data[d].index for d in ticker_data])
+        logger.info(f"Combined dataset has {len(all_indices)} timepoints")
+        
+        aligned_data = {}
+        
+        for t in tickers:
+            aligned_data[t] = ticker_data[t].reindex(index=all_indices).sort_index()
+        
+        # Get feature columns (excluding Target)
+        first_ticker = tickers[0]
+        feature_columns = [col for col in aligned_data[first_ticker].columns if col != 'Target']
+        num_features = len(feature_columns)
+        num_stocks = len(tickers)
+        
+        logger.info(f"Creating 3D array with dimensions: timepoints={len(all_indices)}, stocks={num_stocks}, features={num_features}")
+        
+        # Create 3D arrays: (timesteps, stocks, features)
+        processed_data = np.zeros((len(all_indices), num_stocks, num_features))
+        targets = np.zeros((len(all_indices), num_stocks))
+        
+        for i, ticker in enumerate(tickers):
+            df = aligned_data[ticker][feature_columns + ['Target']].fillna(method='ffill').fillna(method='bfill')
+            processed_data[:, i, :] = df[feature_columns].values
+            targets[:, i] = df['Target'].values
+        
+        # Check for NaNs
+        nan_count = np.isnan(processed_data).sum()
+        if nan_count > 0:
+            logger.warning(f"Found {nan_count} NaN values in processed data before cleaning")
+            
+        # Clean any remaining NaNs
+        nan_mask = np.isnan(processed_data).any(axis=(1, 2)) | np.isnan(targets).any(axis=1)
+        processed_data = processed_data[~nan_mask]
+        targets = targets[~nan_mask]
+        
+        logger.info(f"Final processed data shape after NaN removal: {processed_data.shape}")
+        logger.info(f"Final targets shape after NaN removal: {targets.shape}")
+        
+        return processed_data, targets, feature_columns, tickers
+        
+    except Exception as e:
+        logger.error(f"Error in align_and_process_data: {e}", exc_info=True)
+        raise
 
 def filter_correlated_features(ticker_data, threshold=0.9):
     """
     Analyze feature correlations and remove highly correlated features
     Returns filtered data and list of features to keep
     """
-    print(f"Filtering highly correlated features with threshold {threshold}")
-    
-    # Use the first ticker as reference for correlation analysis
-    first_ticker = list(ticker_data.keys())[0]
-    df = ticker_data[first_ticker].copy()
-    
-    # Calculate correlation matrix
-    corr_matrix = df.corr().abs()
-    
-    # Create a mask for the upper triangle
-    upper = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
-    
-    # Find features with correlation greater than threshold
-    to_drop = [column for column in upper.columns if any(upper[column] > threshold)]
-    
-    print(f"Identified {len(to_drop)} highly correlated features to remove: {to_drop}")
-
-    if 'Close' in to_drop:
-        print("Excluding 'Close' column from removal list.")
-        to_drop.remove('Close')
-
-    print(f"Final list of {len(to_drop)} features to remove: {to_drop}")
-    
-    # Features to keep
-    features_to_keep = [col for col in df.columns if col not in to_drop]
-    
-    # Filter features for all tickers
-    filtered_ticker_data = {}
-    for ticker, data in ticker_data.items():
-        filtered_ticker_data[ticker] = data[features_to_keep]
-    
-    return filtered_ticker_data, features_to_keep
-
-def load_data_from_db(db_path, tickers_list):
-    """Load ticker data from SQLite database into DataFrames."""
-    conn = sqlite3.connect(db_path)
-    ticker_data = {}
-    
-    for t in tickers_list:
-        query = f"SELECT date, open, high, low, close, volume, dividends, stock_splits FROM raw_stock_data WHERE ticker = '{t}' ORDER BY date"
-        df = pd.read_sql_query(query, conn, parse_dates=['date'])
-        df.set_index('date', inplace=True)
+    try:
+        logger.info(f"Filtering highly correlated features with threshold {threshold}")
         
-        df.columns = ['Open', 'High', 'Low', 'Close', 'Volume', 'Dividends', 'Stock Splits']
+        # Use the first ticker as reference for correlation analysis
+        first_ticker = list(ticker_data.keys())[0]
+        df = ticker_data[first_ticker].copy()
         
-        if not df.empty:
-            ticker_data[t] = df
-        else:
-            logger.warning(f"No data found in database for {t}")
-    
-    conn.close()
-    return ticker_data
+        # Calculate correlation matrix
+        corr_matrix = df.corr().abs()
+        
+        # Create a mask for the upper triangle
+        upper = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
+        
+        # Find features with correlation greater than threshold
+        to_drop = [column for column in upper.columns if any(upper[column] > threshold)]
+        
+        logger.info(f"Identified {len(to_drop)} highly correlated features to remove")
+        
+        if 'Close' in to_drop:
+            logger.info("Excluding 'Close' column from removal list.")
+            to_drop.remove('Close')
+        
+        # Print top correlations for debugging
+        top_corr_pairs = []
+        for i in range(len(corr_matrix.columns)):
+            for j in range(i+1, len(corr_matrix.columns)):
+                col1, col2 = corr_matrix.columns[i], corr_matrix.columns[j]
+                corr_value = corr_matrix.iloc[i, j]
+                if corr_value > threshold:
+                    top_corr_pairs.append((col1, col2, corr_value))
+        
+        # Sort by correlation value and print top 10
+        top_corr_pairs.sort(key=lambda x: x[2], reverse=True)
+        logger.info("Top correlated feature pairs:")
+        for col1, col2, corr in top_corr_pairs[:10]:
+            logger.info(f"  {col1} - {col2}: {corr:.4f}")
+        
+        logger.info(f"Final list of {len(to_drop)} features to remove")
+        
+        # Features to keep
+        features_to_keep = [col for col in df.columns if col not in to_drop]
+        
+        # Filter features for all tickers
+        filtered_ticker_data = {}
+        for ticker, data in ticker_data.items():
+            filtered_ticker_data[ticker] = data[features_to_keep]
+        
+        return filtered_ticker_data, features_to_keep
+        
+    except Exception as e:
+        logger.error(f"Error in feature correlation filtering: {e}", exc_info=True)
+        # Return original data if there's an error
+        logger.info("Returning original data due to error in correlation filtering")
+        return ticker_data, list(ticker_data[list(ticker_data.keys())[0]].columns)
 
-def save_processed_data_to_db(db_path, processed_data, targets, feature_columns, tickers):
-    """Save processed data to SQLite database."""
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    
-    # Serialize the data using pickle
-    data_blob = pickle.dumps({
-        'processed_data': processed_data,
-        'targets': targets,
-        'feature_columns': feature_columns,
-        'tickers': tickers
-    })
-    
-    # Use current date as identifier
-    current_date = datetime.now().strftime('%Y-%m-%d')
-    
-    # Insert or replace
-    cursor.execute('''
-    INSERT OR REPLACE INTO processed_data (date, data_blob)
-    VALUES (?, ?)
-    ''', (current_date, data_blob))
-    
-    conn.commit()
-    conn.close()
-    
-    logger.info(f"Successfully saved processed data to database with date: {current_date}")
 
+def run_processing(config_path: str, mode: str = 'full_process') -> Optional[str]:
 
-def run_processing(config_path: str):
     """Main function to run all data processing steps."""
     try:
         with open(config_path, 'r') as f:
             params = yaml.safe_load(f)
-        logger.debug(f"Loaded parameters: {params}") # Use logger.debug for verbose info
+        logger.info(f"Loaded configuration from {config_path}")
 
-        # Define paths from config
-        # raw_data_dir = Path(params['output_paths']['raw_data_template']).parent
-        # processed_output_path = Path(params['output_paths']['processed_data_path'])
-        # processed_output_path.parent.mkdir(parents=True, exist_ok=True)
+        # Get database configuration
+        db_config = params['database']
+        logger.info(f"Using database configuration: host={db_config['host']}, dbname={db_config['dbname']}")
 
-        # logger.info(f"Raw data directory: {raw_data_dir}")
-        # logger.info(f"Processed data output path: {processed_output_path}")
-        db_path = Path(params['output_paths']['database_path'])
-        db_path.parent.mkdir(parents=True, exist_ok=True)
-
-        logger.info(f"Database path: {db_path}")
+        # Log key configuration parameters
+        logger.info(f"Processing with parameters: tickers={params['data_loading']['tickers']}, "
+                   f"period={params['data_loading']['period']}, "
+                   f"interval={params['data_loading']['interval']}")
 
         tickers_list = params['data_loading']['tickers']
         period = params['data_loading']['period']
@@ -330,129 +289,144 @@ def run_processing(config_path: str):
         fetch_delay = params['data_loading']['fetch_delay']
         corr_threshold = params['feature_engineering']['correlation_threshold']
 
-        # 1. Load Raw Data (or ensure it's downloaded)
-        # logger.info("--- Starting Data Loading ---")
-        # load_data(tickers_list, period, interval, fetch_delay, raw_data_dir)
-        # logger.info("--- Finished Data Loading ---")
+        # 1. Load Raw Data
         logger.info("--- Starting Data Loading ---")
-        load_data(tickers_list, period, interval, fetch_delay, db_path)
+        load_data(tickers_list, period, interval, fetch_delay, db_config)
         logger.info("--- Finished Data Loading ---")
 
-        # Load from saved pickles
-        # ticker_data = {}
-        # for t in tickers_list:
-        #     raw_path = raw_data_dir / f"{t}_raw.pkl"
-        #     if raw_path.exists():
-        #         with open(raw_path, 'rb') as f:
-        #             ticker_data[t] = pickle.load(f)
-        #     else:
-        #         logger.warning(f"Raw data file not found for {t} at {raw_path}")
+        # 2. Load data from database
+        logger.info("--- Loading Data from Database ---")
+        ticker_data = load_data_from_db(db_config, tickers_list)
+        logger.info(f"Loaded data for {len(ticker_data)} tickers from database")
 
-        ticker_data = load_data_from_db(db_path, tickers_list)
+        # ...rest of the function remains the same until saving...
 
-
-        # Filter out any tickers where data wasn't loaded
-        ticker_data = {k: v for k, v in ticker_data.items() if v is not None and not v.empty}
-        if not ticker_data:
-            logger.error("No valid ticker data loaded. Exiting.")
-            raise ValueError("No valid ticker data loaded. Exiting.")
-        loaded_tickers = list(ticker_data.keys())
-
-        # 2. Add Technical Indicators
-        logger.info("--- Starting Feature Engineering (Indicators) ---")
-        ticker_data = add_technical_indicators(ticker_data)
-        logger.info("--- Finished Feature Engineering (Indicators) ---")
-
-        # 3. Filter Correlated Features
-        logger.info("--- Starting Feature Filtering ---")
-        ticker_data, remaining_features = filter_correlated_features(ticker_data, corr_threshold)
-        logger.info(f"Features remaining after filtering: {len(remaining_features)}")
-        logger.info("--- Finished Feature Filtering ---")
-
-        # 4. Align and Process
-        logger.info("--- Starting Data Alignment & Processing ---")
-        processed_data, targets, feature_columns, final_tickers = align_and_process_data(ticker_data)
-        logger.info(f"Processed data shape: {processed_data.shape}")
-        logger.info(f"Targets shape: {targets.shape}")
-        logger.info(f"Final tickers in order: {final_tickers}")
-        logger.info("--- Finished Data Alignment & Processing ---")
-
-        # 5. Save Processed Data
-        # logger.info(f"--- Saving Processed Data to {processed_output_path} ---")
-        # try:
-        #     np.savez(
-        #         processed_output_path,
-        #         processed_data=processed_data,
-        #         targets=targets,
-        #         feature_columns=np.array(feature_columns, dtype=object),
-        #         tickers=np.array(final_tickers, dtype=object)
-        #     )
-        #     logger.info(f"Successfully saved processed data to {processed_output_path}")
-        # except Exception as e:
-        #         logger.error(f"Failed to save processed data to {processed_output_path}", exc_info=True)
-        #         raise # Re-raise the exception so Airflow task fails
-        # logger.info("--- Finished Saving Processed Data ---")
-
-        # absolute_save_path = processed_output_path.resolve()
-        # logger.info(f"Attempting to save to absolute path: {absolute_save_path}")
-        # try:
-        #     np.savez(
-        #         processed_output_path,
-        #         processed_data=processed_data,
-        #         targets=targets,
-        #         feature_columns=np.array(feature_columns, dtype=object),
-        #         tickers=np.array(final_tickers, dtype=object)
-        #     )
-        #     logger.info(f"Successfully saved processed data to {processed_output_path}")
-        #     # Add an existence check right after saving
-        #     if absolute_save_path.exists():
-        #         logger.info(f"Verified file exists at: {absolute_save_path}")
-        #     else:
-        #         logger.error(f"!!! File DOES NOT exist immediately after saving at: {absolute_save_path}")
-        # except Exception as e:
-        #     logger.error(f"Failed to save processed data to {processed_output_path}", exc_info=True)
-        #     raise
+        # 6. Save Processed Data to database
         logger.info(f"--- Saving Processed Data to database ---")
         try:
-            save_processed_data_to_db(
-                db_path, 
+            run_id = datetime.now().strftime('%Y%m%d_%H%M%S')
+            save_processed_features_to_db(
+                db_config,
                 processed_data,
                 targets,
                 feature_columns,
-                final_tickers
+                final_tickers,
+                run_id
             )
-            logger.info(f"Successfully saved processed data to database")
+            logger.info(f"Successfully saved processed data to database with run_id: {run_id}")
         except Exception as e:
             logger.error(f"Failed to save processed data to database", exc_info=True)
             raise
         logger.info("--- Finished Saving Processed Data ---")
 
-
     except Exception as e:
-        logger.error("An error occurred during the data processing pipeline.", exc_info=True)
-        raise # Re-raise the exception to ensure Airflow task fails
+        logger.error(f"Error in run_processing: {e}", exc_info=True)
+        raise
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--config', type=str, 
-                        required=True,
-                        help='Path to the configuration file (params.yaml)')
-    # args = parser.parse_args()
+    # try:
+    #     parser = argparse.ArgumentParser()
+    #     parser.add_argument('--config', type=str, 
+    #                       required=False,
+    #                       help='Path to the configuration file (params.yaml)')
 
-    # Check if arguments were passed
-    if len(sys.argv) == 1:
-        # No arguments, use default config path
-        config_path = 'params.yaml'
-        logger.info(f"No config specified, using default: {config_path}")
-    else:
-        # Parse arguments normally
+    #     # Check if arguments were passed
+    #     if len(sys.argv) == 1:
+    #         # No arguments, use default config path
+    #         config_path = 'params.yaml'
+    #         logger.info(f"No config specified, using default: {config_path}")
+    #     else:
+    #         # Parse arguments normally
+    #         args = parser.parse_args()
+    #         config_path = args.config
+
+    #     # Verify config file exists
+    #     if not os.path.exists(config_path):
+    #         logger.error(f"Configuration file not found: {config_path}")
+    #         sys.exit(1)
+
+    #     # Verify database configuration exists
+    #     with open(config_path, 'r') as f:
+    #         config = yaml.safe_load(f)
+    #         if 'database' not in config:
+    #             logger.error("Database configuration missing from params.yaml")
+    #             sys.exit(1)
+    #         required_db_fields = ['dbname', 'user', 'password', 'host', 'port']
+    #         missing_fields = [field for field in required_db_fields if field not in config['database']]
+    #         if missing_fields:
+    #             logger.error(f"Missing required database configuration fields: {missing_fields}")
+    #             sys.exit(1)
+
+    #     logger.info(f"Starting data processing script with config: {config_path}")
+    #     logger.info(f"Using PostgreSQL database at {config['database']['host']}:{config['database']['port']}")
+
+    #     run_processing(config_path)
+    #     logger.info("Data processing script finished successfully.")
+        
+    # except yaml.YAMLError as e:
+    #     logger.error(f"Error parsing configuration file: {e}", exc_info=True)
+    #     sys.exit(1)
+    # except Exception as e:
+    #     logger.error(f"Fatal error in data processing script: {e}", exc_info=True)
+    #     sys.exit(1)
+
+    # -----------------------
+    try:
+        parser = argparse.ArgumentParser(description="Data processing script for stock prediction.")
+        parser.add_argument(
+            '--config',
+            type=str,
+            default='config/params.yaml', # Default path relative to project root
+            help='Path to the configuration file (params.yaml)'
+        )
+        parser.add_argument(
+            '--mode',
+            type=str,
+            choices=['incremental_fetch', 'full_process'],
+            default='full_process', # Default to full processing if not specified
+            help='Operation mode: "incremental_fetch" for daily raw data, "full_process" for complete training dataset generation.'
+        )
         args = parser.parse_args()
         config_path = args.config
+        mode = args.mode
 
-    # logger.info(f"Starting data processing script with config: {args.config}")
-    logger.info(f"Starting data processing script with config: {config_path}")
-    print("--- PRINT TEST: Starting Data Loading ---")
+        # Verify config file exists
+        if not os.path.exists(config_path):
+            logger.error(f"Configuration file not found: {config_path}")
+            sys.exit(1)
 
-    # run_processing(args.config)
-    run_processing(config_path)
-    logger.info("Data processing script finished.")
+        # Verify database configuration exists
+        with open(config_path, 'r') as f:
+            config = yaml.safe_load(f)
+            if 'database' not in config:
+                logger.error("Database configuration missing from params.yaml")
+                sys.exit(1)
+            required_db_fields = ['dbname', 'user', 'password', 'host', 'port']
+            missing_fields = [field for field in required_db_fields if field not in config['database']]
+            if missing_fields:
+                logger.error(f"Missing required database configuration fields: {missing_fields}")
+                sys.exit(1)
+
+        logger.info(f"Starting data processing script with config: {config_path} in mode: {mode}")
+        
+        # Call run_processing with the mode
+        # run_processing needs to be adapted to handle the mode and return run_id for 'full_process'
+        if mode == 'full_process':
+            # This function will now need to return the run_id
+            generated_run_id = run_processing(config_path, mode=mode)
+            if generated_run_id:
+                print(f"Full processing completed. Dataset run_id: {generated_run_id}")
+            else:
+                logger.error("Full processing did not return a run_id.")
+                sys.exit(1)
+        else: # incremental_fetch
+            run_processing(config_path, mode=mode)
+        
+        logger.info(f"Data processing script (mode: {mode}) finished successfully.")
+        
+    except yaml.YAMLError as e:
+        logger.error(f"Error parsing configuration file: {e}", exc_info=True)
+        sys.exit(1)
+    except Exception as e:
+        logger.error(f"Fatal error in data processing script: {e}", exc_info=True)
+        sys.exit(1)
