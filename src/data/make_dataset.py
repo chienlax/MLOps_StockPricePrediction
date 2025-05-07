@@ -11,7 +11,8 @@ from pathlib import Path
 import logging
 import os
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
+from typing import Optional, List, Dict, Tuple, Union, Any, Callable, Iterable
 
 try:
     from src.utils.db_utils import (
@@ -46,41 +47,124 @@ if not logger.hasHandlers():
     logger.addHandler(handler)
 
 
-def load_data(tickers_list, period, interval, fetch_delay, db_config):
-    """Loads data for tickers and saves to PostgreSQL database."""
-    try:
-        # Initialize database
-        setup_database(db_config)
-        logger.info("Initializing PostgreSQL database connection")
+# def load_data(tickers_list, period, interval, fetch_delay, db_config):
+#     """Loads data for tickers and saves to PostgreSQL database."""
+#     try:
+#         # Initialize database
+#         setup_database(db_config)
+#         logger.info("Initializing PostgreSQL database connection")
 
-        for t in tickers_list:
-            # Check if ticker data already exists
-            if check_ticker_exists(t, db_config):
-                logger.info(f"Skipping download for {t}, data exists in database")
-                continue
+#         for t in tickers_list:
+#             # Check if ticker data already exists
+#             if check_ticker_exists(t, db_config):
+#                 logger.info(f"Skipping download for {t}, data exists in database")
+#                 continue
 
-            try:
-                logger.info(f"Downloading data for {t}")
-                data = yf.Ticker(t).history(period=period, interval=interval)
+#             try:
+#                 logger.info(f"Downloading data for {t}")
+#                 data = yf.Ticker(t).history(period=period, interval=interval)
                 
-                if data.empty:
-                    logger.warning(f"No data available for {t}")
-                    continue
+#                 if data.empty:
+#                     logger.warning(f"No data available for {t}")
+#                     continue
                     
-                # Log the data shape for debugging
-                logger.info(f"Downloaded {len(data)} records for {t}")
+#                 # Log the data shape for debugging
+#                 logger.info(f"Downloaded {len(data)} records for {t}")
                 
-                # Save to database
-                save_to_raw_table(t, data, db_config)
-                time.sleep(fetch_delay)
+#                 # Save to database
+#                 save_to_raw_table(t, data, db_config)
+#                 time.sleep(fetch_delay)
                 
-            except Exception as e:
-                logger.error(f"Error loading {t}: {e}", exc_info=True)
+#             except Exception as e:
+#                 logger.error(f"Error loading {t}: {e}", exc_info=True)
+#                 continue
+
+#     except Exception as e:
+#         logger.error(f"Error in load_data function: {e}", exc_info=True)
+#         raise
+
+
+# ------------------------------------------------------
+
+def load_data(tickers_list: list, period: str, interval: str, fetch_delay: int, db_config: dict):
+    """
+    Loads raw stock data for the given tickers from Yahoo Finance.
+    - If a ticker has existing data in the database, it fetches new data incrementally.
+    - Otherwise, it fetches data for the specified 'period'.
+    Saves all fetched data to the 'raw_stock_data' table in the database.
+    
+    Args:
+        tickers_list (list): List of stock tickers (e.g., ['AAPL', 'MSFT']).
+        period (str): The default period to fetch if no data exists for a ticker (e.g., "1y", "max").
+                      This is IGNORED if fetching incrementally for a ticker.
+        interval (str): Data interval (e.g., "1d", "1h").
+        fetch_delay (int): Seconds to wait between API calls for different tickers.
+        db_config (dict): Database connection configuration.
+    """
+    # setup_database(db_config) # Moved to run_processing to be called once.
+
+    logger.info("Starting raw data loading/updating from Yahoo Finance.")
+
+    for t in tickers_list:
+        last_known_date_in_db = get_last_data_timestamp_for_ticker(db_config, t)
+        
+        yf_start_date_str = None
+        fetch_description = ""
+
+        if last_known_date_in_db:
+            # yfinance 'start' is inclusive. We want data *after* the last known date.
+            # Ensure last_known_date_in_db is a datetime object for timedelta
+            if isinstance(last_known_date_in_db, str): # Should not happen if db_utils returns datetime
+                last_known_date_in_db = pd.to_datetime(last_known_date_in_db)
+
+            yf_start_date = last_known_date_in_db + timedelta(days=1)
+            yf_start_date_str = yf_start_date.strftime('%Y-%m-%d')
+            
+            # Check if start_date is in the future (e.g. trying to fetch on a weekend for next monday)
+            if yf_start_date > datetime.now():
+                logger.info(f"Calculated start date {yf_start_date_str} for {t} is in the future. No data to fetch.")
                 continue
 
-    except Exception as e:
-        logger.error(f"Error in load_data function: {e}", exc_info=True)
-        raise
+            fetch_description = f"incrementally for {t} from {yf_start_date_str}"
+        else:
+            # No data in DB for this ticker, fetch the full 'period'
+            fetch_description = f"full period '{period}' for {t}"
+
+        try:
+            logger.info(f"Attempting to download data {fetch_description}")
+            
+            # If yf_start_date_str is set, 'period' will be ignored by yfinance.
+            # If yf_start_date_str is None, 'period=period' will be used.
+            # yfinance's history() period argument is used if start and end are not provided.
+            # If start is provided, period is ignored.
+            data = yf.Ticker(t).history(
+                period=period if not yf_start_date_str else None,
+                start=yf_start_date_str, # Will be None if fetching full period
+                interval=interval
+            )
+            
+            if data.empty:
+                if yf_start_date_str:
+                    logger.info(f"No new data found for {t} since {last_known_date_in_db.strftime('%Y-%m-%d') if last_known_date_in_db else 'beginning'}.")
+                else:
+                    logger.warning(f"No data returned by yfinance for {t} for period '{period}'.")
+                continue # Move to the next ticker
+                
+            logger.info(f"Downloaded {len(data)} records for {t} from yfinance.")
+            
+            records_added = save_to_raw_table(t, data, db_config)
+            logger.info(f"Saved/Updated {records_added} records for {t} in the database.")
+            
+            if fetch_delay > 0:
+                time.sleep(fetch_delay)
+            
+        except Exception as e_ticker:
+            logger.error(f"Error processing ticker {t}: {e_ticker}", exc_info=True)
+            continue # Continue to the next ticker
+            
+    logger.info("Finished raw data loading/updating from Yahoo Finance.")
+
+# ------------------------------------------------------
 
 def add_technical_indicators(ticker_data):
     for t in ticker_data:
@@ -130,6 +214,8 @@ def add_technical_indicators(ticker_data):
         ticker_data[t] = df
     return ticker_data
 
+# ------------------------------------------------------
+
 def preprocess_data(df):
     try:
         original_shape = df.shape
@@ -153,6 +239,8 @@ def preprocess_data(df):
     except Exception as e:
         logger.error(f"Error in preprocess_data: {e}", exc_info=True)
         raise
+
+# ------------------------------------------------------
 
 def align_and_process_data(ticker_data):
     try:
@@ -204,6 +292,8 @@ def align_and_process_data(ticker_data):
     except Exception as e:
         logger.error(f"Error in align_and_process_data: {e}", exc_info=True)
         raise
+
+# ------------------------------------------------------
 
 def filter_correlated_features(ticker_data, threshold=0.9):
     """
@@ -265,17 +355,24 @@ def filter_correlated_features(ticker_data, threshold=0.9):
         logger.info("Returning original data due to error in correlation filtering")
         return ticker_data, list(ticker_data[list(ticker_data.keys())[0]].columns)
 
+# ------------------------------------------------------
 
 def run_processing(config_path: str, mode: str = 'full_process') -> Optional[str]:
-
-    """Main function to run all data processing steps."""
+    """
+    Main function to run data processing steps.
+    - 'incremental_fetch' mode: Calls load_data to fetch only new raw data and saves to DB.
+    - 'full_process' mode: Calls load_data to ensure raw data is up-to-date,
+                           then processes all raw data from DB for training, saves features, and returns a run_id.
+    """
     try:
         with open(config_path, 'r') as f:
             params = yaml.safe_load(f)
         logger.info(f"Loaded configuration from {config_path}")
 
         # Get database configuration
+        logger.info("Setting up/Verifying database schema...")
         db_config = params['database']
+        setup_database(db_config)
         logger.info(f"Using database configuration: host={db_config['host']}, dbname={db_config['dbname']}")
 
         # Log key configuration parameters
@@ -283,150 +380,160 @@ def run_processing(config_path: str, mode: str = 'full_process') -> Optional[str
                    f"period={params['data_loading']['period']}, "
                    f"interval={params['data_loading']['interval']}")
 
-        tickers_list = params['data_loading']['tickers']
-        period = params['data_loading']['period']
-        interval = params['data_loading']['interval']
-        fetch_delay = params['data_loading']['fetch_delay']
+        data_loading_params = params['data_loading']
+        tickers_list = data_loading_params['tickers']
+
+        period = data_loading_params['period']
+        default_fetch_period = data_loading_params['period']
+
+        interval = data_loading_params['interval']
+        fetch_delay = data_loading_params['fetch_delay']
         corr_threshold = params['feature_engineering']['correlation_threshold']
 
-        # 1. Load Raw Data
-        logger.info("--- Starting Data Loading ---")
-        load_data(tickers_list, period, interval, fetch_delay, db_config)
-        logger.info("--- Finished Data Loading ---")
+        if mode == 'incremental_fetch':
+            logger.info("--- Starting Mode: Incremental Raw Data Fetch ---")
+            load_data(tickers_list, default_fetch_period, interval, fetch_delay, db_config)
+            logger.info("--- Finished Mode: Incremental Raw Data Fetch ---")
+            return None
+        
+        elif mode == 'full_process':
+            logger.info("--- Starting Mode: Full Data Processing for Training ---")
+            
+            logger.info("Step 1.1: Ensuring raw data is up-to-date (calling load_data)...")
+            load_data(tickers_list, default_fetch_period, interval, fetch_delay, db_config)
+            logger.info("Step 1.1: Finished ensuring raw data is up-to-date.")
 
-        # 2. Load data from database
-        logger.info("--- Loading Data from Database ---")
-        ticker_data = load_data_from_db(db_config, tickers_list)
-        logger.info(f"Loaded data for {len(ticker_data)} tickers from database")
+            logger.info("Step 1.2: Loading all available raw data from database...")
+            ticker_data_from_db = load_data_from_db(db_config, tickers_list)
+            if not ticker_data_from_db or all(df.empty for df in ticker_data_from_db.values()):
+                logger.error("No raw data found in the database for any ticker after load_data. Cannot proceed.")
+                return None
+            logger.info(f"Loaded data for {len(ticker_data_from_db)} tickers from database.")
 
-        # ...rest of the function remains the same until saving...
+            logger.info("Step 1.3: Adding technical indicators...")
+            ticker_data_with_ta = add_technical_indicators(ticker_data_from_db.copy())
+            logger.info("Step 1.3: Finished adding technical indicators.")
+            
+            logger.info("Step 1.4: Preprocessing individual ticker data...")
+            ticker_data_preprocessed = {}
+            for ticker, df_ta in ticker_data_with_ta.items():
+                if df_ta.empty:
+                    logger.warning(f"DataFrame for {ticker} is empty after TA. Skipping preprocessing for it.")
+                    continue
+                ticker_data_preprocessed[ticker] = preprocess_data(df_ta.copy())
+            
+            if not ticker_data_preprocessed or all(df.empty for df in ticker_data_preprocessed.values()):
+                logger.error("No data available after preprocessing all tickers. Cannot proceed.")
+                return None
+            logger.info("Step 1.4: Finished preprocessing individual ticker data.")
 
-        # 6. Save Processed Data to database
-        logger.info(f"--- Saving Processed Data to database ---")
-        try:
-            run_id = datetime.now().strftime('%Y%m%d_%H%M%S')
+            logger.info("Step 1.5: Aligning data and creating final numpy arrays...")
+            processed_data_np, targets_np, feature_columns_list, final_tickers_list = align_and_process_data(
+                ticker_data_preprocessed.copy() 
+            )
+            if processed_data_np is None or targets_np is None: # Check if align_and_process_data indicated failure
+                logger.error("Failed to align and process data into numpy arrays. Cannot proceed.")
+                return None
+            logger.info("Step 1.5: Finished aligning data and creating numpy arrays.")
+
+            current_run_id = datetime.now().strftime('%Y%m%d_%H%M%S')
+            logger.info(f"Step 1.6: Saving processed feature data to database with run_id: {current_run_id}...")
             save_processed_features_to_db(
                 db_config,
-                processed_data,
-                targets,
-                feature_columns,
-                final_tickers,
-                run_id
+                processed_data_np,
+                targets_np,
+                feature_columns_list,
+                final_tickers_list,
+                current_run_id
             )
-            logger.info(f"Successfully saved processed data to database with run_id: {run_id}")
-        except Exception as e:
-            logger.error(f"Failed to save processed data to database", exc_info=True)
-            raise
-        logger.info("--- Finished Saving Processed Data ---")
+            logger.info(f"Step 1.6: Successfully saved processed feature data for run_id: {current_run_id}.")
+            logger.info("--- Finished Mode: Full Data Processing for Training ---")
+            return current_run_id
+
+        else:
+            logger.error(f"Invalid mode specified: {mode}. Choose 'incremental_fetch' or 'full_process'.")
+            return None
 
     except Exception as e:
-        logger.error(f"Error in run_processing: {e}", exc_info=True)
+        logger.error(f"Error in run_processing (mode: {mode}): {e}", exc_info=True)
+        if mode == 'full_process':
+            return None
         raise
 
+
+
+# ------------------------------------------------------
+
 if __name__ == '__main__':
-    # try:
-    #     parser = argparse.ArgumentParser()
-    #     parser.add_argument('--config', type=str, 
-    #                       required=False,
-    #                       help='Path to the configuration file (params.yaml)')
+    parser = argparse.ArgumentParser(description="Data ingestion and processing script for stock prediction.")
+    parser.add_argument(
+        '--config',
+        type=str,
+        default='config/params.yaml', 
+        help='Path to the configuration file (e.g., config/params.yaml)'
+    )
+    parser.add_argument(
+        '--mode',
+        type=str,
+        choices=['incremental_fetch', 'full_process'],
+        default='full_process', 
+        help="Operation mode: 'incremental_fetch' for daily raw data updates, "
+             "'full_process' for generating a complete training dataset with a new run_id."
+    )
+    args = parser.parse_args()
+    config_path_arg = args.config
+    mode_arg = args.mode
 
-    #     # Check if arguments were passed
-    #     if len(sys.argv) == 1:
-    #         # No arguments, use default config path
-    #         config_path = 'params.yaml'
-    #         logger.info(f"No config specified, using default: {config_path}")
-    #     else:
-    #         # Parse arguments normally
-    #         args = parser.parse_args()
-    #         config_path = args.config
-
-    #     # Verify config file exists
-    #     if not os.path.exists(config_path):
-    #         logger.error(f"Configuration file not found: {config_path}")
-    #         sys.exit(1)
-
-    #     # Verify database configuration exists
-    #     with open(config_path, 'r') as f:
-    #         config = yaml.safe_load(f)
-    #         if 'database' not in config:
-    #             logger.error("Database configuration missing from params.yaml")
-    #             sys.exit(1)
-    #         required_db_fields = ['dbname', 'user', 'password', 'host', 'port']
-    #         missing_fields = [field for field in required_db_fields if field not in config['database']]
-    #         if missing_fields:
-    #             logger.error(f"Missing required database configuration fields: {missing_fields}")
-    #             sys.exit(1)
-
-    #     logger.info(f"Starting data processing script with config: {config_path}")
-    #     logger.info(f"Using PostgreSQL database at {config['database']['host']}:{config['database']['port']}")
-
-    #     run_processing(config_path)
-    #     logger.info("Data processing script finished successfully.")
-        
-    # except yaml.YAMLError as e:
-    #     logger.error(f"Error parsing configuration file: {e}", exc_info=True)
-    #     sys.exit(1)
-    # except Exception as e:
-    #     logger.error(f"Fatal error in data processing script: {e}", exc_info=True)
-    #     sys.exit(1)
-
-    # -----------------------
-    try:
-        parser = argparse.ArgumentParser(description="Data processing script for stock prediction.")
-        parser.add_argument(
-            '--config',
-            type=str,
-            default='config/params.yaml', # Default path relative to project root
-            help='Path to the configuration file (params.yaml)'
-        )
-        parser.add_argument(
-            '--mode',
-            type=str,
-            choices=['incremental_fetch', 'full_process'],
-            default='full_process', # Default to full processing if not specified
-            help='Operation mode: "incremental_fetch" for daily raw data, "full_process" for complete training dataset generation.'
-        )
-        args = parser.parse_args()
-        config_path = args.config
-        mode = args.mode
-
-        # Verify config file exists
-        if not os.path.exists(config_path):
-            logger.error(f"Configuration file not found: {config_path}")
+    # Resolve config path to be absolute for robustness
+    config_path_resolved = Path(config_path_arg)
+    if not config_path_resolved.is_absolute():
+        # Try to resolve relative to the script's directory or project root
+        # This logic might need adjustment based on how/where you run the script
+        if (Path.cwd() / config_path_resolved).exists():
+            config_path_resolved = (Path.cwd() / config_path_resolved).resolve()
+        elif (Path(__file__).parent.parent.parent / config_path_resolved).exists(): # Assuming script is in src/data/
+            config_path_resolved = (Path(__file__).parent.parent.parent / config_path_resolved).resolve()
+        else:
+            logger.error(f"Configuration file not found: {config_path_arg} (resolved to {config_path_resolved})")
             sys.exit(1)
+    
+    if not config_path_resolved.exists():
+        logger.error(f"Configuration file not found: {config_path_resolved}")
+        sys.exit(1)
 
-        # Verify database configuration exists
-        with open(config_path, 'r') as f:
-            config = yaml.safe_load(f)
-            if 'database' not in config:
+    logger.info(f"Starting data processing script with resolved config: {config_path_resolved} in mode: {mode_arg}")
+
+    try:
+        with open(config_path_resolved, 'r') as f:
+            config_params = yaml.safe_load(f)
+            if 'database' not in config_params:
                 logger.error("Database configuration missing from params.yaml")
                 sys.exit(1)
             required_db_fields = ['dbname', 'user', 'password', 'host', 'port']
-            missing_fields = [field for field in required_db_fields if field not in config['database']]
+            missing_fields = [field for field in required_db_fields if field not in config_params['database']]
             if missing_fields:
                 logger.error(f"Missing required database configuration fields: {missing_fields}")
                 sys.exit(1)
+        
+        logger.info(f"Using PostgreSQL database at {config_params['database']['host']}:{config_params['database']['port']}")
 
-        logger.info(f"Starting data processing script with config: {config_path} in mode: {mode}")
+        returned_value = run_processing(str(config_path_resolved), mode=mode_arg)
         
-        # Call run_processing with the mode
-        # run_processing needs to be adapted to handle the mode and return run_id for 'full_process'
-        if mode == 'full_process':
-            # This function will now need to return the run_id
-            generated_run_id = run_processing(config_path, mode=mode)
-            if generated_run_id:
-                print(f"Full processing completed. Dataset run_id: {generated_run_id}")
+        if mode_arg == 'full_process':
+            if returned_value: 
+                logger.info(f"Full processing completed. Dataset run_id: {returned_value}")
+                print(f"RUN_ID:{returned_value}") 
             else:
-                logger.error("Full processing did not return a run_id.")
-                sys.exit(1)
-        else: # incremental_fetch
-            run_processing(config_path, mode=mode)
+                logger.error("Full processing mode did not return a run_id. Check logs for errors.")
+                sys.exit(1) 
+        else: 
+            logger.info(f"Incremental fetch mode completed.")
+            
+        logger.info(f"Data processing script (mode: {mode_arg}) finished successfully.")
         
-        logger.info(f"Data processing script (mode: {mode}) finished successfully.")
-        
-    except yaml.YAMLError as e:
-        logger.error(f"Error parsing configuration file: {e}", exc_info=True)
+    except yaml.YAMLError as e_yaml:
+        logger.error(f"Error parsing configuration file {config_path_resolved}: {e_yaml}", exc_info=True)
         sys.exit(1)
-    except Exception as e:
-        logger.error(f"Fatal error in data processing script: {e}", exc_info=True)
+    except Exception as e_main_script:
+        logger.error(f"Fatal error in data processing script (mode: {mode_arg}): {e_main_script}", exc_info=True)
         sys.exit(1)
