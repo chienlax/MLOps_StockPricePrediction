@@ -46,7 +46,6 @@ if not logger.hasHandlers():
     handler.setFormatter(formatter)
     logger.addHandler(handler)
 
-
 # def load_data(tickers_list, period, interval, fetch_delay, db_config):
 #     """Loads data for tickers and saves to PostgreSQL database."""
 #     try:
