@@ -106,6 +106,7 @@ def load_data(tickers_list: list, period: str, interval: str, fetch_delay: int, 
 
     for t in tickers_list:
         last_known_date_in_db = get_last_data_timestamp_for_ticker(db_config, t)
+        # last_known_date_in_db = None
         
         yf_start_date_str = None
         fetch_description = ""
@@ -458,8 +459,6 @@ def run_processing(config_path: str, mode: str = 'full_process') -> Optional[str
         if mode == 'full_process':
             return None
         raise
-
-
 
 # ------------------------------------------------------
 

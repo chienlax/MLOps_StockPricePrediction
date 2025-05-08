@@ -49,7 +49,12 @@ if not logger.handlers:
 
 # ------------------------------------------------------------------
 
-def objective(trial, X_train, y_train, X_test, y_test, num_features, num_stocks, y_scalers, device):
+# trial, X_train_scaled, y_train_scaled, X_test_scaled, y_test_scaled,
+#             num_features, num_stocks, y_scalers, device, optimization_epochs, patience
+
+def objective(trial, X_train, y_train, X_test, y_test, 
+              num_features, num_stocks, y_scalers, 
+              device, optimization_epochs, patience):
     """Optuna objective function for hyperparameter optimization"""
     
     # Define hyperparameters to tune
@@ -104,10 +109,10 @@ def objective(trial, X_train, y_train, X_test, y_test, num_features, num_stocks,
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
     
     # Training loop
-    num_epochs = 20  # Limited epochs for hyperparameter search
+    num_epochs = optimization_epochs
     best_val_loss = float('inf')
     patience_counter = 0
-    patience = 5  # Early stopping patience
+    patience = patience 
     
     for epoch in range(num_epochs):
         model.train()
@@ -238,7 +243,6 @@ def run_optimization(config_path: str, run_id_arg: str) -> tuple[Optional[dict],
         n_trials = opt_params['n_trials']
         optimization_epochs = opt_params.get('epochs', 20) # Epochs per Optuna trial
         patience = opt_params.get('patience', 5) # Early stopping patience per trial
-
 
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         logger.info(f"Using device: {device}")

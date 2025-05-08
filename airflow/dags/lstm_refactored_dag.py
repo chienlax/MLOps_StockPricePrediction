@@ -26,7 +26,7 @@ def initialize_database(**kwargs):
 
     print(f"Attempting to load config from: {CONFIG_PATH}")
     with open(CONFIG_PATH, 'r') as f:
-        config = yaml.safe_load(f)
+        config = yaml.safe_load(f)  
     db_config = config['database']
     print(f"DATABASE CONFIG LOADED: {db_config}") 
     setup_database(db_config)

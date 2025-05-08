@@ -144,46 +144,143 @@ def setup_database(db_config: dict) -> None:
         logger.error(f"Error setting up database: {e}")
         raise
 
-def save_to_raw_table(ticker: str, data: pd.DataFrame, db_config: dict) -> int:
-    """Save raw ticker data to database."""
+def save_to_raw_table(ticker_symbol: str, data_df: pd.DataFrame, db_config: dict) -> int:
+    """
+    Saves or updates raw ticker data in the database using batch insertion.
+    Converts NumPy types to Python native types before insertion.
+    """
+    conn = None
+    cursor = None
+    
+    # Define the order of columns from the DataFrame to match the SQL query.
+    # yfinance DataFrame columns: 'Open', 'High', 'Low', 'Close', 'Volume', 'Dividends', 'Stock Splits'
+    df_cols_ordered = ['Open', 'High', 'Low', 'Close', 'Volume', 'Dividends', 'Stock Splits']
+
+    # SQL for batch insert/update (ticker, date, open, high, low, close, volume, dividends, stock_splits)
+    sql_upsert = """
+        INSERT INTO raw_stock_data 
+            (ticker, date, open, high, low, close, volume, dividends, stock_splits)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        ON CONFLICT (ticker, date) DO UPDATE SET
+            open = EXCLUDED.open,
+            high = EXCLUDED.high,
+            low = EXCLUDED.low,
+            close = EXCLUDED.close,
+            volume = EXCLUDED.volume,
+            dividends = EXCLUDED.dividends,
+            stock_splits = EXCLUDED.stock_splits;
+    """
+    rows_to_upsert = []
+    for date_index, row in data_df.iterrows():
+        # date_index is typically a pandas.Timestamp, which psycopg2 handles well.
+        
+        current_row_values = [ticker_symbol, date_index] # ticker, date
+        
+        for col_name in df_cols_ordered:
+            value = row[col_name]
+            if pd.isna(value):
+                current_row_values.append(None)
+            # isinstance(value, np.generic) catches most numpy scalar types
+            elif isinstance(value, np.floating): # e.g., np.float16, np.float32, np.float64
+                current_row_values.append(float(value))
+            elif isinstance(value, np.integer): # e.g., np.int8, np.int16, np.int32, np.int64
+                current_row_values.append(int(value))
+            elif isinstance(value, (float, int)): # Already a Python native numeric type
+                current_row_values.append(value)
+            else:
+                # For other types, log a warning and consider how to handle.
+                # If your REAL columns get non-numeric types, it will cause SQL errors.
+                logger.warning(
+                    f"Unexpected data type for {ticker_symbol} - {col_name} on {date_index}: {type(value)}, value: {value}. "
+                    f"Attempting to cast to float, or inserting NULL."
+                )
+                try:
+                    current_row_values.append(float(value)) # Try to cast, might fail
+                except (ValueError, TypeError):
+                    current_row_values.append(None) # Fallback to NULL if cast fails
+
+        rows_to_upsert.append(tuple(current_row_values))
+
+    if not rows_to_upsert:
+        logger.info(f"No data rows prepared for upsert for ticker {ticker_symbol}.")
+        return 0
+
     try:
         conn = get_db_connection(db_config)
         cursor = conn.cursor()
+
+        # Use executemany for batch upsert
+        cursor.executemany(sql_upsert, rows_to_upsert)
         
-        records_added = 0
-        for idx, row in data.iterrows():
-            date_str = idx.strftime('%Y-%m-%d %H:%M:%S')
-            try:
-                cursor.execute('''
-                INSERT INTO raw_stock_data 
-                (ticker, date, open, high, low, close, volume, dividends, stock_splits)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT (ticker, date) DO UPDATE SET
-                    open = EXCLUDED.open,
-                    high = EXCLUDED.high,
-                    low = EXCLUDED.low,
-                    close = EXCLUDED.close,
-                    volume = EXCLUDED.volume,
-                    dividends = EXCLUDED.dividends,
-                    stock_splits = EXCLUDED.stock_splits
-                ''', (
-                    ticker, date_str, row['Open'], row['High'], row['Low'], 
-                    row['Close'], row['Volume'], row['Dividends'], row['Stock Splits']
-                ))
-                records_added += 1
-            except Exception as e:
-                logger.error(f"Error inserting record for {ticker} on {date_str}: {e}")
-                
+        # cursor.rowcount for executemany with ON CONFLICT might not be reliable
+        # for counting actual inserts vs. updates across all DB drivers/versions.
+        # It often returns the number of rows *matched* by the statement.
+        # If an exact count of new vs. updated is critical, more complex logic is needed.
+        # For now, we'll assume success if no error.
+        num_processed_rows = len(rows_to_upsert) 
+        
         conn.commit()
-        cursor.close()
-        conn.close()
-        
-        logger.info(f"Successfully added {records_added} records for {ticker} to database")
-        return records_added
-        
-    except Exception as e:
-        logger.error(f"Error saving data to raw table: {e}")
+        logger.info(f"Successfully upserted {num_processed_rows} data points for {ticker_symbol} into database.")
+        # The number of *actually added or updated* rows can be tricky with ON CONFLICT.
+        # The simplest is to report num_processed_rows as "attempted".
+        return num_processed_rows # Or a more accurate count if you can determine it.
+
+    except psycopg2.Error as e_db:
+        logger.error(f"Database error during batch upsert for {ticker_symbol}: {e_db}", exc_info=True)
+        if conn:
+            conn.rollback() # Rollback the entire batch on any error
+        raise # Re-raise to indicate failure to the calling function
+    except Exception as e_general:
+        logger.error(f"General error during batch upsert for {ticker_symbol}: {e_general}", exc_info=True)
+        if conn:
+            conn.rollback()
         raise
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+# def save_to_raw_table(ticker: str, data: pd.DataFrame, db_config: dict) -> int:
+#     """Save raw ticker data to database."""
+#     try:
+#         conn = get_db_connection(db_config)
+#         cursor = conn.cursor()
+        
+#         records_added = 0
+#         for idx, row in data.iterrows():
+#             date_str = idx.strftime('%Y-%m-%d %H:%M:%S')
+#             try:
+#                 cursor.execute('''
+#                 INSERT INTO raw_stock_data 
+#                 (ticker, date, open, high, low, close, volume, dividends, stock_splits)
+#                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+#                 ON CONFLICT (ticker, date) DO UPDATE SET
+#                     open = EXCLUDED.open,
+#                     high = EXCLUDED.high,
+#                     low = EXCLUDED.low,
+#                     close = EXCLUDED.close,
+#                     volume = EXCLUDED.volume,
+#                     dividends = EXCLUDED.dividends,
+#                     stock_splits = EXCLUDED.stock_splits
+#                 ''', (
+#                     ticker, date_str, row['Open'], row['High'], row['Low'], 
+#                     row['Close'], row['Volume'], row['Dividends'], row['Stock Splits']
+#                 ))
+#                 records_added += 1
+#             except Exception as e:
+#                 logger.error(f"Error inserting record for {ticker} on {date_str}: {e}")
+                
+#         conn.commit()
+#         cursor.close()
+#         conn.close()
+        
+#         logger.info(f"Successfully added {records_added} records for {ticker} to database")
+#         return records_added
+        
+#     except Exception as e:
+#         logger.error(f"Error saving data to raw table: {e}")
+#         raise
 
 def serialize_numpy(array: np.ndarray) -> bytes:
     """Serialize numpy array to bytes using pickle."""

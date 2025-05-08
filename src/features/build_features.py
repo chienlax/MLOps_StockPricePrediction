@@ -199,7 +199,7 @@ def run_feature_building(config_path: str, run_id_arg: str) -> Optional[str]:
         
         if not processed_data_dict:
             logger.error(f"No processed data found in database for run_id: {current_run_id}. Cannot build features.")
-            return None # Indicate failure
+            return None
         
         processed_data_np = processed_data_dict['processed_data'] # Shape: (timesteps, stocks, features)
         targets_np = processed_data_dict['targets']             # Shape: (timesteps, stocks)
