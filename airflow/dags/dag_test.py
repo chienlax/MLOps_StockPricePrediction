@@ -4,13 +4,12 @@ from __future__ import annotations
 import pendulum
 from pathlib import Path
 import os
-import subprocess # For PythonOperator to call scripts
-import logging # For better logging within PythonOperator callables
+import subprocess 
+import logging
 
 from airflow.models.dag import DAG
 from airflow.operators.bash import BashOperator # We'll still use it for some tasks
 from airflow.operators.python import PythonOperator
-# from src.utils.db_utils import setup_database # Import directly if not using PythonOperator for init
 
 # Setup logging for Airflow context
 log = logging.getLogger(__name__)
@@ -31,7 +30,6 @@ def callable_initialize_database(**kwargs):
     # Since this runs in Airflow, direct import of your project's utils should work
     # if /opt/airflow (PROJECT_ROOT) is effectively in PYTHONPATH or structure allows.
     # To be safe, ensure PYTHONPATH includes /opt/airflow or use relative imports carefully.
-    # For now, let's assume src.utils.db_utils is findable.
     try:
         from src.utils.db_utils import setup_database
     except ImportError:

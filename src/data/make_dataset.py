@@ -7,12 +7,12 @@ import numpy as np
 import pandas as pd
 import yfinance as yf
 import ta
-from pathlib import Path
 import logging
 import os
 import sys
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Tuple, Union, Any, Callable, Iterable
+from pathlib import Path
 
 try:
     from src.utils.db_utils import (
@@ -40,48 +40,11 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 if not logger.hasHandlers():
-    handler = logging.StreamHandler() # Defaults to stderr
-    handler.setLevel(logging.INFO) # <--- ADD THIS LINE
+    handler = logging.StreamHandler()
+    handler.setLevel(logging.INFO)
     formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     handler.setFormatter(formatter)
     logger.addHandler(handler)
-
-# def load_data(tickers_list, period, interval, fetch_delay, db_config):
-#     """Loads data for tickers and saves to PostgreSQL database."""
-#     try:
-#         # Initialize database
-#         setup_database(db_config)
-#         logger.info("Initializing PostgreSQL database connection")
-
-#         for t in tickers_list:
-#             # Check if ticker data already exists
-#             if check_ticker_exists(t, db_config):
-#                 logger.info(f"Skipping download for {t}, data exists in database")
-#                 continue
-
-#             try:
-#                 logger.info(f"Downloading data for {t}")
-#                 data = yf.Ticker(t).history(period=period, interval=interval)
-                
-#                 if data.empty:
-#                     logger.warning(f"No data available for {t}")
-#                     continue
-                    
-#                 # Log the data shape for debugging
-#                 logger.info(f"Downloaded {len(data)} records for {t}")
-                
-#                 # Save to database
-#                 save_to_raw_table(t, data, db_config)
-#                 time.sleep(fetch_delay)
-                
-#             except Exception as e:
-#                 logger.error(f"Error loading {t}: {e}", exc_info=True)
-#                 continue
-
-#     except Exception as e:
-#         logger.error(f"Error in load_data function: {e}", exc_info=True)
-#         raise
-
 
 # ------------------------------------------------------
 
@@ -270,7 +233,7 @@ def align_and_process_data(ticker_data):
         targets = np.zeros((len(all_indices), num_stocks))
         
         for i, ticker in enumerate(tickers):
-            df = aligned_data[ticker][feature_columns + ['Target']].fillna(method='ffill').fillna(method='bfill')
+            df = aligned_data[ticker][feature_columns + ['Target']].ffill().bfill() #fillna(method='ffill').fillna(method='bfill')
             processed_data[:, i, :] = df[feature_columns].values
             targets[:, i] = df['Target'].values
         

@@ -10,7 +10,6 @@ import os
 import sys
 import optuna
 import logging
-
 from pathlib import Path
 from torch.utils.data import DataLoader, TensorDataset
 from datetime import datetime
@@ -48,9 +47,6 @@ if not logger.handlers:
     logger.setLevel(logging.INFO)
 
 # ------------------------------------------------------------------
-
-# trial, X_train_scaled, y_train_scaled, X_test_scaled, y_test_scaled,
-#             num_features, num_stocks, y_scalers, device, optimization_epochs, patience
 
 def objective(trial, X_train, y_train, X_test, y_test, 
               num_features, num_stocks, y_scalers, 
@@ -166,76 +162,6 @@ def run_optimization(config_path: str, run_id_arg: str) -> tuple[Optional[dict],
         db_config = params['database']
         logger.info(f"Using PostgreSQL database at {db_config['host']}:{db_config['port']}")
         
-        # Get run_id from params
-    #     run_id = params.get('run_id')
-    #     if not run_id:
-    #         logger.warning("No run_id provided in params, will attempt to use most recent data")
-    #         run_id = None
-
-    #     n_trials = params['optimization']['n_trials']
-
-    #     # Device setup
-    #     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    #     logger.info(f"Using device: {device}")
-
-    #     # 1. Load Scaled Data from database
-    #     logger.info(f"--- Loading Scaled Data from database ---")
-    #     X_train_scaled = load_scaled_features(db_config, run_id, 'X_train')
-    #     y_train_scaled = load_scaled_features(db_config, run_id, 'y_train')
-    #     X_test_scaled = load_scaled_features(db_config, run_id, 'X_test')
-    #     y_test_scaled = load_scaled_features(db_config, run_id, 'y_test')
-        
-    #     if any(data is None for data in [X_train_scaled, y_train_scaled, X_test_scaled, y_test_scaled]):
-    #         logger.error("Failed to load scaled data from database")
-    #         raise ValueError("Failed to load scaled data from database")
-            
-    #     logger.info(f"X_train_scaled shape: {X_train_scaled.shape}")
-    #     logger.info(f"y_train_scaled shape: {y_train_scaled.shape}")
-    #     logger.info("--- Finished Loading Scaled Data ---")
-
-    #     # 2. Load Scalers from database
-    #     logger.info(f"--- Loading Scalers from database ---")
-    #     scalers = load_scalers(db_config, run_id)
-    #     if scalers is None:
-    #         logger.error("Failed to load scalers from database")
-    #         raise ValueError("Failed to load scalers from database")
-            
-    #     y_scalers = scalers['y_scalers']
-    #     logger.info("--- Finished Loading Scalers ---")
-
-    #     num_stocks = y_train_scaled.shape[2]
-    #     num_features = X_train_scaled.shape[3]  # Note the index change
-
-    #     # 3. Run Optuna Study
-    #     logger.info(f"--- Starting Optuna Optimization ({n_trials} trials) ---")
-    #     study = optuna.create_study(direction="minimize")
-    #     study.optimize(lambda trial: objective(
-    #         trial, X_train_scaled, y_train_scaled, X_test_scaled, y_test_scaled,
-    #         num_features, num_stocks, y_scalers, device
-    #     ), n_trials=n_trials)
-    #     logger.info("--- Finished Optuna Optimization ---")
-
-    #     # 4. Save Best Parameters to database
-    #     logger.info(f"Best trial value (loss): {study.best_value}")
-    #     logger.info(f"Best parameters: {study.best_params}")
-    #     logger.info(f"--- Saving Best Parameters to database ---")
-    #     save_optimization_results(db_config, run_id, study.best_params)
-    #     logger.info("--- Finished Saving Best Parameters ---")
-        
-    #     # Save to file if specified
-    #     if 'output_paths' in params and 'best_params_path' in params['output_paths']:
-    #         best_params_output_path = Path(params['output_paths']['best_params_path'])
-    #         best_params_output_path.parent.mkdir(parents=True, exist_ok=True)
-    #         logger.info(f"--- Also saving Best Parameters to file: {best_params_output_path} ---")
-    #         with open(best_params_output_path, 'w') as f:
-    #             json.dump(study.best_params, f, indent=4)
-        
-    #     return study.best_params, run_id
-
-    # except Exception as e:
-    #     logger.error(f"Error during optimization for run_id {run_id_arg}: {e}", exc_info=True)
-    #     return None, None
-
         current_run_id = run_id_arg
         logger.info(f"Targeting dataset with run_id: {current_run_id} for hyperparameter optimization.")
 
@@ -332,38 +258,6 @@ def run_optimization(config_path: str, run_id_arg: str) -> tuple[Optional[dict],
 # ------------------------------------------------------------------
 
 if __name__ == '__main__':
-    # try:
-    #     parser = argparse.ArgumentParser()
-    #     parser.add_argument('--config', type=str, 
-    #                       required=True, 
-    #                       help='Path to the configuration file (params.yaml)')
-    #     args = parser.parse_args()
-
-    #     # Verify config file exists
-    #     if not os.path.exists(args.config):
-    #         logger.error(f"Configuration file not found: {args.config}")
-    #         sys.exit(1)
-
-    #     # Verify database configuration
-    #     with open(args.config, 'r') as f:
-    #         config = yaml.safe_load(f)
-    #         if 'database' not in config:
-    #             logger.error("Database configuration missing from params.yaml")
-    #             sys.exit(1)
-    #         required_db_fields = ['dbname', 'user', 'password', 'host', 'port']
-    #         missing_fields = [field for field in required_db_fields 
-    #                         if field not in config['database']]
-    #         if missing_fields:
-    #             logger.error(f"Missing required database fields: {missing_fields}")
-    #             sys.exit(1)
-
-    #     run_optimization(args.config)
-    #     logger.info("Optimization completed successfully")
-        
-    # except Exception as e:
-    #     logger.error(f"Error in optimization process: {e}", exc_info=True)
-    #     sys.exit(1)
-
     parser = argparse.ArgumentParser(description="Hyperparameter optimization script for stock prediction.")
     parser.add_argument(
         '--config',
@@ -382,7 +276,6 @@ if __name__ == '__main__':
     cli_run_id_arg = args.run_id
 
     config_path_resolved = Path(config_path_arg)
-    # ... (same config path resolution logic as in build_features.py) ...
     if not config_path_resolved.is_absolute(): # Simplified for brevity
         config_path_resolved = (Path.cwd() / config_path_resolved).resolve()
     if not config_path_resolved.exists():

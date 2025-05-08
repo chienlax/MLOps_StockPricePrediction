@@ -241,47 +241,6 @@ def save_to_raw_table(ticker_symbol: str, data_df: pd.DataFrame, db_config: dict
         if conn:
             conn.close()
 
-# def save_to_raw_table(ticker: str, data: pd.DataFrame, db_config: dict) -> int:
-#     """Save raw ticker data to database."""
-#     try:
-#         conn = get_db_connection(db_config)
-#         cursor = conn.cursor()
-        
-#         records_added = 0
-#         for idx, row in data.iterrows():
-#             date_str = idx.strftime('%Y-%m-%d %H:%M:%S')
-#             try:
-#                 cursor.execute('''
-#                 INSERT INTO raw_stock_data 
-#                 (ticker, date, open, high, low, close, volume, dividends, stock_splits)
-#                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-#                 ON CONFLICT (ticker, date) DO UPDATE SET
-#                     open = EXCLUDED.open,
-#                     high = EXCLUDED.high,
-#                     low = EXCLUDED.low,
-#                     close = EXCLUDED.close,
-#                     volume = EXCLUDED.volume,
-#                     dividends = EXCLUDED.dividends,
-#                     stock_splits = EXCLUDED.stock_splits
-#                 ''', (
-#                     ticker, date_str, row['Open'], row['High'], row['Low'], 
-#                     row['Close'], row['Volume'], row['Dividends'], row['Stock Splits']
-#                 ))
-#                 records_added += 1
-#             except Exception as e:
-#                 logger.error(f"Error inserting record for {ticker} on {date_str}: {e}")
-                
-#         conn.commit()
-#         cursor.close()
-#         conn.close()
-        
-#         logger.info(f"Successfully added {records_added} records for {ticker} to database")
-#         return records_added
-        
-#     except Exception as e:
-#         logger.error(f"Error saving data to raw table: {e}")
-#         raise
-
 def serialize_numpy(array: np.ndarray) -> bytes:
     """Serialize numpy array to bytes using pickle."""
     return pickle.dumps(array)
