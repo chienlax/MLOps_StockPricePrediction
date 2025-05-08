@@ -23,9 +23,12 @@ TRAIN_SCRIPT = PROJECT_ROOT / 'src/models/train_model.py'
 def initialize_database(**kwargs):
     """Initialize the PostgreSQL database with all required tables."""
     import yaml
+
+    print(f"Attempting to load config from: {CONFIG_PATH}")
     with open(CONFIG_PATH, 'r') as f:
         config = yaml.safe_load(f)
     db_config = config['database']
+    print(f"DATABASE CONFIG LOADED: {db_config}") 
     setup_database(db_config)
     return "Database initialized"
 
@@ -36,7 +39,7 @@ default_args = {
     'email_on_failure': False,
     'email_on_retry': False,
     'retries': 1,
-    'retry_delay': pendulum.duration(minutes=2), 
+    'retry_delay': pendulum.duration(seconds=5), 
 }
 
 with DAG(

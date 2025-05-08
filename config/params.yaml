@@ -1,8 +1,8 @@
 data_loading:
   tickers: ['AAPL', 'MA', 'CSCO', 'MSFT', 'AMZN', 'GOOG', 'IBM']
-  period: "3y"
+  period: "1y"
   interval: "1d"
-  fetch_delay: 5
+  fetch_delay: 10
 
 feature_engineering:
   correlation_threshold: 0.9
@@ -18,10 +18,10 @@ training:
   epochs: 5
 
 database:
-  dbname: 'stock_prediction'
-  user: 'admin' #Not remember
-  password: 'admin'
-  host: 'localhost'
+  dbname: 'airflow'
+  user: 'airflow'
+  password: 'airflow'
+  host: 'postgres'
   port: '5432'
 
 monitoring:
