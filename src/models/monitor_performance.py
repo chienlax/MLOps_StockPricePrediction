@@ -16,9 +16,9 @@ from src.utils import db_utils
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 from utils.db_utils import (
-    get_latest_predictions, # To get predictions for the evaluation date
+    get_latest_predictions,
     save_daily_performance_metrics,
-    load_data_from_db # Can be used to get specific actual prices
+    load_data_from_db 
 )
 
 logger = logging.getLogger(__name__)
@@ -47,6 +47,8 @@ def calculate_directional_accuracy(predicted_today: float, actual_today: float, 
         return 0.0 # Or handle as 0.5 if preferred for neutrality
 
     return 1.0 if np.sign(pred_change) == np.sign(actual_change) else 0.0
+
+# -------------------------------------------------------------------
 
 def run_monitoring(config_path: str) -> str:
     """

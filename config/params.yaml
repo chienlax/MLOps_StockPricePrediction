@@ -33,6 +33,11 @@ monitoring:
 airflow_dags:
   daily_operations_dag_id: "daily_stock_operations"
   retraining_pipeline_dag_id: "stock_model_retraining_pipeline"
+  # daily_operations_dag_id: "daily_stock_operations_prod" # Example name
+  # retraining_pipeline_dag_id: "stock_model_retraining_prod" # Example name
+  retraining_trigger_task_id: "trigger_retraining_pipeline_task"
+  no_retraining_task_id: "no_retraining_needed_task"
+
 
 output_paths:
   raw_data_template: "/opt/airflow/data/raw/{ticker}_raw.pkl"

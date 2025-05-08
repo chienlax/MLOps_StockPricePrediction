@@ -12,13 +12,13 @@ from typing import Optional, Dict, Any
 
 try:
     from src.utils.db_utils import (
-        get_db_connection, # Not directly used here, but load_processed_features_from_db uses it
+        get_db_connection,
         load_processed_features_from_db,
         save_scaled_features,
         save_scalers
     )
 except ImportError:
-    sys.path.append(str(Path(__file__).resolve().parents[1])) # Add 'src' to path
+    sys.path.append(str(Path(__file__).resolve().parents[1])) 
     from utils.db_utils import (
         load_processed_features_from_db,
         save_scaled_features,

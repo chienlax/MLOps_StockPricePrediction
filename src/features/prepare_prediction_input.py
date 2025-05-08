@@ -10,8 +10,6 @@ import os
 from datetime import datetime
 from typing import Optional
 
-# Ensure 'src' is in PYTHONPATH for imports if script is run directly or when Airflow executes it.
-# This assumes the script is in src/features/ and db_utils is in src/utils/, make_dataset in src/data/
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 from utils.db_utils import (
@@ -19,8 +17,6 @@ from utils.db_utils import (
     load_processed_features_from_db, # To get feature_columns and tickers
     get_latest_raw_data_window
 )
-# We need add_technical_indicators from make_dataset.py
-# This requires make_dataset.py to be importable and the function to be defined at the module level.
 from data.make_dataset import add_technical_indicators, preprocess_data
 
 
@@ -34,7 +30,9 @@ if not logger.handlers:
     logger.setLevel(logging.INFO)
 
 
-def run_prepare_input(config_path: str, production_model_training_run_id: str, output_dir: str) -> Optional[str]:
+def run_prepare_input(config_path: str, 
+                      production_model_training_run_id: str, 
+                      output_dir: str) -> Optional[str]:
     """
     Prepares the input sequence for daily prediction using the production model's configuration.
 
@@ -189,17 +187,6 @@ def run_prepare_input(config_path: str, production_model_training_run_id: str, o
 
         # 8. Reshape for model input (add batch dimension)
         # Model expects (batch_size, seq_len, num_stocks, num_features)
-        # Or (batch_size, seq_len, num_stocks * num_features) depending on model_definitions.py
-        # Assuming your StockLSTM and variants take (batch, seq_len, num_stocks, num_features)
-        # and then reshape internally if needed.
-        # Let's check the model_definitions.py:
-        # StockLSTM reshapes x.reshape(batch_size, seq_len, n_stocks * n_features)
-        # StockLSTMWithAttention also reshapes to n_stocks * n_features
-        # StockLSTMWithCrossStockAttention takes (batch, seq, n_stocks, n_features)
-        # For safety, let's provide (1, seq_len, num_stocks, num_features)
-        # The model training script prepares X_train_scaled with shape (samples, seq_len, num_stocks, num_features)
-        # So, for prediction, we need (1, seq_len, num_stocks, num_features)
-        
         model_input_sequence = np.expand_dims(input_sequence_scaled, axis=0) # (1, seq_len, num_stocks, num_features)
         logger.info(f"Final model input sequence shape: {model_input_sequence.shape}")
 

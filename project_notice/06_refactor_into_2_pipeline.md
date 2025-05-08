@@ -1809,3 +1809,637 @@ if __name__ == '__main__':
         *   Run: `python src/models/monitor_performance.py --config config/params.yaml`
         *   Check logs, the `model_performance_log` DB table, and the printed `NEXT_TASK_ID`.
 2.  **Refine and Debug:** Expect to iterate and debug. Pay close attention to paths, database interactions, and data shapes.
+
+# Phase 3:
+
+Alright, we're on the home stretch! Phase 3 is about bringing everything together into the final two Airflow DAGs: one for daily operations and one for the model retraining pipeline. This involves combining elements from our Phase 1 and Phase 2 test DAGs and adding the full branching and triggering logic.
+
+**My Internal Thinking Process for Designing Phase 3 DAGs:**
+
+1.  **Consolidate and Refine:**
+    *   The `temp_phase1_retraining_pipeline` DAG we designed earlier is very close to the final `stock_model_retraining_dag.py`.
+    *   The `temp_phase2_daily_operations_test` DAG forms the core of the final `daily_stock_operations_dag.py`.
+2.  **Daily Operations DAG (`daily_stock_operations_dag.py`):**
+    *   **Trigger:** Scheduled (e.g., daily).
+    *   **Core Tasks (from Phase 2 test DAG):**
+        *   Incremental raw data fetch (`make_dataset.py --mode incremental_fetch`).
+        *   Get production model info (URI and its training `dataset_run_id`).
+        *   Prepare prediction input (`prepare_prediction_input.py`).
+        *   Make daily predictions (`predict_model.py`).
+        *   Monitor performance (`monitor_performance.py`).
+    *   **Key Addition: Branching and Triggering:**
+        *   The `monitor_model_performance` task will now feed into an Airflow `BranchPythonOperator`.
+        *   This `BranchPythonOperator` will use the output of `monitor_performance.py` (which is a task ID string) to decide whether to:
+            *   Execute a `TriggerDagRunOperator` to kick off the `stock_model_retraining_dag.py`.
+            *   Or execute a `DummyOperator` (or similar "do nothing" task) if no retraining is needed.
+    *   **Idempotency:** The `initialize_database` task from the Phase 1 test DAG can be included here or assumed to be run once separately. Since `setup_database` is idempotent (`CREATE TABLE IF NOT EXISTS`), including it daily is harmless and ensures the schema is always correct.
+3.  **Model Retraining DAG (`stock_model_retraining_dag.py`):**
+    *   **Trigger:** Not scheduled (`schedule=None`). It will be triggered by the daily operations DAG or can be run manually.
+    *   **Core Tasks (from Phase 1 test DAG):**
+        *   Full data processing (`make_dataset.py --mode full_process`) to get a new `dataset_run_id`.
+        *   Build features (using the new `dataset_run_id`).
+        *   Optimize hyperparameters (using the new `dataset_run_id`).
+        *   Train candidate model (using the new `dataset_run_id`), which logs to MLflow and registers the model.
+    *   **Key Addition: Candidate Model Evaluation and Promotion Logic:**
+        *   After a candidate model is trained (and its MLflow run ID is available via XCom), a new `PythonOperator` task will:
+            *   Load the candidate model from MLflow.
+            *   Load the current "Production" model from MLflow Model Registry.
+            *   Evaluate *both* models on a consistent, held-out test set (this test set should be derived from the *new* `dataset_run_id` used for the candidate's training, to ensure a fair comparison on the latest data distribution).
+            *   Compare their performance metrics.
+        *   Another `BranchPythonOperator` will decide based on this comparison whether to:
+            *   Promote the candidate model to "Production" in MLflow Model Registry (using `MlflowClient().transition_model_version_stage()`).
+            *   Or do nothing if the candidate is not better.
+4.  **XComs:** Continue to be vital for passing `dataset_run_id`, model URIs, file paths, and decision flags between tasks.
+5.  **Configuration:** `params.yaml` will store DAG IDs, MLflow details, monitoring thresholds, etc.
+6.  **PYTHONPATH and Environment:** Ensure Python scripts can find custom modules (`src.utils`, `src.data`, etc.) by setting `PYTHONPATH` in `BashOperator` environments or configuring Airflow's Python environment appropriately.
+
+---
+
+**Phase 3: Final Airflow DAG Implementation**
+
+**1. `airflow/dags/daily_stock_operations_dag.py` (New/Final)**
+
+```python
+# airflow/dags/daily_stock_operations_dag.py
+from __future__ import annotations
+
+import pendulum
+from pathlib import Path
+import os
+import subprocess
+import logging
+import yaml # For loading params directly in Python callables if needed
+
+from airflow.models.dag import DAG
+from airflow.operators.bash import BashOperator
+from airflow.operators.python import PythonOperator, BranchPythonOperator
+from airflow.operators.trigger_dagrun import TriggerDagRunOperator
+from airflow.operators.dummy import DummyOperator # For branching
+import mlflow
+from mlflow.tracking import MlflowClient
+
+log = logging.getLogger(__name__)
+
+# --- Define Paths ---
+PROJECT_ROOT = Path('/opt/airflow')
+CONFIG_PATH = PROJECT_ROOT / 'config/params.yaml'
+MAKE_DATASET_SCRIPT = PROJECT_ROOT / 'src/data/make_dataset.py'
+PREPARE_INPUT_SCRIPT = PROJECT_ROOT / 'src/features/prepare_prediction_input.py'
+PREDICT_MODEL_SCRIPT = PROJECT_ROOT / 'src/models/predict_model.py'
+MONITOR_PERFORMANCE_SCRIPT = PROJECT_ROOT / 'src/models/monitor_performance.py'
+
+# --- Python Callables ---
+def callable_initialize_database(**kwargs):
+    import yaml
+    try:
+        from src.utils.db_utils import setup_database
+    except ImportError:
+        import sys
+        sys.path.insert(0, str(PROJECT_ROOT))
+        from src.utils.db_utils import setup_database
+    
+    log.info(f"Daily Ops: Loading config from: {CONFIG_PATH}")
+    with open(CONFIG_PATH, 'r') as f:
+        config = yaml.safe_load(f)
+    db_config = config['database']
+    setup_database(db_config)
+    log.info("Daily Ops: Database initialization complete.")
+    return "DB Initialized"
+
+def callable_get_production_model_info_for_daily(**kwargs):
+    ti = kwargs['ti']
+    with open(CONFIG_PATH, 'r') as f:
+        params = yaml.safe_load(f)
+    
+    mlflow_cfg = params['mlflow']
+    mlflow_tracking_uri = os.environ.get('MLFLOW_TRACKING_URI', mlflow_cfg.get('tracking_uri'))
+    registered_model_name = mlflow_cfg.get('experiment_name') # Assuming this is also the registered model name
+
+    if not mlflow_tracking_uri or not registered_model_name:
+        raise ValueError("MLflow tracking URI or registered_model_name not configured in params.yaml.")
+    
+    mlflow.set_tracking_uri(mlflow_tracking_uri)
+    client = MlflowClient()
+    
+    production_model_uri = None
+    prod_model_dataset_run_id = None
+
+    latest_prod_versions = client.get_latest_versions(name=registered_model_name, stages=["Production"])
+    if not latest_prod_versions:
+        log.error(f"CRITICAL: No model '{registered_model_name}' found in 'Production' stage. Daily prediction cannot proceed.")
+        # In a real system, this might trigger an alert or a specific fallback.
+        # For now, we'll let it fail the task.
+        raise ValueError(f"No Production model for '{registered_model_name}'.")
+        
+    production_version_obj = sorted(latest_prod_versions, key=lambda v: int(v.version), reverse=True)[0]
+    # Construct URI that points to the specific version in production for clarity
+    production_model_uri = f"models:/{registered_model_name}/{production_version_obj.version}"
+    prod_model_mlflow_run_id = production_version_obj.run_id
+    
+    mlflow_run_details = client.get_run(prod_model_mlflow_run_id)
+    prod_model_dataset_run_id = mlflow_run_details.data.params.get("dataset_run_id")
+    
+    if not prod_model_dataset_run_id:
+        raise ValueError(f"'dataset_run_id' param missing from Production model's (MLflow Run {prod_model_mlflow_run_id}) training parameters.")
+    
+    log.info(f"Daily Ops: Using Production Model URI: {production_model_uri}")
+    log.info(f"Daily Ops: Production model's training dataset_run_id: {prod_model_dataset_run_id}")
+
+    ti.xcom_push(key='production_model_uri', value=production_model_uri)
+    ti.xcom_push(key='production_model_training_dataset_run_id', value=prod_model_dataset_run_id)
+
+# Python callable for branching based on monitoring output
+def callable_branch_on_monitoring_result(**kwargs):
+    ti = kwargs['ti']
+    # monitor_performance.py prints "NEXT_TASK_ID:<task_id_for_branching>"
+    # This is captured by BashOperator's default XCom push (key='return_value')
+    monitoring_output = ti.xcom_pull(task_ids='monitor_model_performance_task', key='return_value')
+    log.info(f"Monitoring script output for branching: {monitoring_output}")
+
+    if monitoring_output and "NEXT_TASK_ID:" in monitoring_output:
+        decision_task_id = monitoring_output.split("NEXT_TASK_ID:")[1].strip()
+        log.info(f"Branching decision: proceed to task_id '{decision_task_id}'")
+        return decision_task_id # This must match the task_id of one of the downstream tasks
+    else:
+        log.warning("Could not determine next task from monitoring output. Defaulting to no retraining.")
+        # Fallback to the task_id for "no retraining"
+        with open(CONFIG_PATH, 'r') as f:
+            params = yaml.safe_load(f)
+        return params.get('airflow_dags', {}).get('no_retraining_task_id', 'no_retraining_needed_task')
+
+
+# --- Default Arguments ---
+default_args = {
+    'owner': 'airflow_mlops_team',
+    'depends_on_past': False,
+    'email_on_failure': True, # Enable email on failure for production
+    'email': ['your_email@example.com'], # Add your email
+    'email_on_retry': False,
+    'retries': 2, # Increased retries for daily ops
+    'retry_delay': pendulum.duration(minutes=5),
+}
+
+# --- DAG Definition ---
+with DAG(
+    # dag_id from params.yaml or hardcoded
+    dag_id=yaml.safe_load(open(CONFIG_PATH))['airflow_dags']['daily_operations_dag_id'],
+    default_args=default_args,
+    description='Daily stock data ingestion, prediction, and performance monitoring.',
+    schedule='0 1 * * 1-5',  # Example: 1 AM UTC on weekdays (adjust to your market)
+    start_date=pendulum.datetime(2023, 1, 1, tz="UTC"),
+    catchup=False, # Recommended to be False for most production DAGs
+    tags=['mlops', 'daily_operations', 'stock_prediction'],
+) as dag:
+
+    task_init_db_daily = PythonOperator(
+        task_id='initialize_database_daily_check',
+        python_callable=callable_initialize_database,
+    )
+
+    task_fetch_incremental_data_daily = BashOperator(
+        task_id='fetch_incremental_raw_data_daily',
+        bash_command=f"python {MAKE_DATASET_SCRIPT} --config {CONFIG_PATH} --mode incremental_fetch",
+        env={'PYTHONPATH': f"{PROJECT_ROOT}:{PROJECT_ROOT}/src:{os.environ.get('PYTHONPATH', '')}"},
+    )
+
+    task_get_prod_model_info_daily = PythonOperator(
+        task_id='get_production_model_info_daily',
+        python_callable=callable_get_production_model_info_for_daily,
+    )
+
+    prod_model_uri_xcom = "{{ ti.xcom_pull(task_ids='get_production_model_info_daily', key='production_model_uri') }}"
+    prod_model_dataset_run_id_xcom = "{{ ti.xcom_pull(task_ids='get_production_model_info_daily', key='production_model_training_dataset_run_id') }}"
+    prediction_input_output_dir = "/tmp/daily_airflow_pred_inputs" # Ensure Airflow worker can write here
+
+    task_prepare_input_daily = BashOperator(
+        task_id='prepare_daily_prediction_input',
+        bash_command=(
+            f"mkdir -p {prediction_input_output_dir} && " # Ensure dir exists
+            f"python {PREPARE_INPUT_SCRIPT} "
+            f"--config {CONFIG_PATH} "
+            f"--production_model_training_run_id \"{prod_model_dataset_run_id_xcom}\" "
+            f"--output_dir {prediction_input_output_dir}"
+        ),
+        env={'PYTHONPATH': f"{PROJECT_ROOT}:{PROJECT_ROOT}/src:{os.environ.get('PYTHONPATH', '')}"},
+        do_xcom_push=True, # To capture "OUTPUT_PATH:<filepath>"
+    )
+    
+    # Parse the output path for the next task
+    input_sequence_file_path_xcom = "{{ ti.xcom_pull(task_ids='prepare_daily_prediction_input').split('OUTPUT_PATH:')[1].strip() }}"
+
+
+    task_make_prediction_daily = BashOperator(
+        task_id='make_daily_prediction',
+        bash_command=(
+            f"python {PREDICT_MODEL_SCRIPT} "
+            f"--config {CONFIG_PATH} "
+            f"--input_sequence_path \"{input_sequence_file_path_xcom}\" "
+            f"--production_model_uri \"{prod_model_uri_xcom}\""
+        ),
+        env={
+            'MLFLOW_TRACKING_URI': os.environ.get('MLFLOW_TRACKING_URI', yaml.safe_load(open(CONFIG_PATH))['mlflow'].get('tracking_uri')),
+            'PYTHONPATH': f"{PROJECT_ROOT}:{PROJECT_ROOT}/src:{os.environ.get('PYTHONPATH', '')}"
+        },
+    )
+
+    # This task needs to run *after* the predictions for evaluation_date are made AND actuals are available.
+    # The schedule of this DAG and evaluation_lag_days handle this timing.
+    task_monitor_performance_daily = BashOperator(
+        task_id='monitor_model_performance_task', # This task_id is used in callable_branch_on_monitoring_result
+        bash_command=f"python {MONITOR_PERFORMANCE_SCRIPT} --config {CONFIG_PATH}",
+        env={'PYTHONPATH': f"{PROJECT_ROOT}:{PROJECT_ROOT}/src:{os.environ.get('PYTHONPATH', '')}"},
+        do_xcom_push=True, # To capture "NEXT_TASK_ID:<decision>"
+    )
+
+    # Branching logic
+    branch_op = BranchPythonOperator(
+        task_id='branch_on_monitoring_decision',
+        python_callable=callable_branch_on_monitoring_result,
+    )
+
+    # Trigger Retraining DAG task
+    # The task_id here should match one of the outputs from callable_branch_on_monitoring_result
+    # and what monitor_performance.py prints.
+    # E.g., if monitor_performance.py prints NEXT_TASK_ID:trigger_retraining_pipeline_task
+    # params.yaml:
+    #   airflow_dags:
+    #     retraining_trigger_task_id: "trigger_retraining_pipeline_task"
+    #     retraining_pipeline_dag_id: "stock_model_retraining_pipeline"
+    
+    with open(CONFIG_PATH, 'r') as f:
+        params_cfg = yaml.safe_load(f)
+    
+    trigger_retraining_task_id_from_cfg = params_cfg['airflow_dags'].get('retraining_trigger_task_id', 'trigger_retraining_pipeline_task')
+    retraining_dag_id_from_cfg = params_cfg['airflow_dags']['retraining_pipeline_dag_id']
+    no_retraining_task_id_from_cfg = params_cfg['airflow_dags'].get('no_retraining_task_id', 'no_retraining_needed_task')
+
+
+    task_trigger_retraining = TriggerDagRunOperator(
+        task_id=trigger_retraining_task_id_from_cfg, # Must match one of the outputs of branch_op
+        trigger_dag_id=retraining_dag_id_from_cfg,
+        # conf={'external_trigger': True, 'triggered_by_dag_id': dag.dag_id}, # Optional: pass config to triggered DAG
+        wait_for_completion=False, # Run retraining DAG asynchronously
+    )
+
+    task_no_retraining = DummyOperator(
+        task_id=no_retraining_task_id_from_cfg, # Must match one of the outputs of branch_op
+    )
+
+    # Define Task Dependencies for Daily DAG
+    task_init_db_daily >> task_fetch_incremental_data_daily >> task_get_prod_model_info_daily
+    task_get_prod_model_info_daily >> task_prepare_input_daily
+    task_prepare_input_daily >> task_make_prediction_daily
+    task_make_prediction_daily >> task_monitor_performance_daily
+    task_monitor_performance_daily >> branch_op
+    branch_op >> [task_trigger_retraining, task_no_retraining]
+
+```
+
+**2. `airflow/dags/stock_model_retraining_dag.py` (Final - based on `temp_phase1_retraining_pipeline`)**
+
+This DAG is mostly what we built for `temp_phase1_retraining_pipeline`, but with added candidate model evaluation and promotion logic.
+
+```python
+# airflow/dags/stock_model_retraining_dag.py
+from __future__ import annotations
+
+import pendulum
+from pathlib import Path
+import os
+import subprocess
+import logging
+import yaml
+import json # For loading params in callables
+
+from airflow.models.dag import DAG
+from airflow.operators.bash import BashOperator
+from airflow.operators.python import PythonOperator, BranchPythonOperator
+from airflow.operators.dummy import DummyOperator
+import mlflow
+from mlflow.tracking import MlflowClient
+# Assuming your evaluate_model can be imported or its logic included in a callable
+# For simplicity, a dedicated callable might be better here.
+
+log = logging.getLogger(__name__)
+
+# --- Define Paths ---
+PROJECT_ROOT = Path('/opt/airflow')
+CONFIG_PATH = PROJECT_ROOT / 'config/params.yaml'
+MAKE_DATASET_SCRIPT = PROJECT_ROOT / 'src/data/make_dataset.py'
+BUILD_FEATURES_SCRIPT = PROJECT_ROOT / 'src/features/build_features.py'
+OPTIMIZE_SCRIPT = PROJECT_ROOT / 'src/models/optimize_hyperparams.py'
+TRAIN_SCRIPT = PROJECT_ROOT / 'src/models/train_model.py'
+
+# --- Python Callables ---
+def callable_initialize_database_retrain(**kwargs): # Renamed to avoid conflict if in same file
+    # Same as in daily_stock_operations_dag.py
+    import yaml
+    try:
+        from src.utils.db_utils import setup_database
+    except ImportError:
+        import sys
+        sys.path.insert(0, str(PROJECT_ROOT))
+        from src.utils.db_utils import setup_database
+    with open(CONFIG_PATH, 'r') as f:
+        config = yaml.safe_load(f)
+    setup_database(config['database'])
+    return "DB Initialized for Retraining"
+
+def callable_run_make_dataset_full_process_retrain(**kwargs):
+    # Same as in temp_phase1_retraining_pipeline
+    script_path = str(MAKE_DATASET_SCRIPT)
+    config_file_path = str(CONFIG_PATH)
+    command = ["python", script_path, "--config", config_file_path, "--mode", "full_process"]
+    log.info(f"Retrain: Executing command: {' '.join(command)}")
+    process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    stdout, stderr = process.communicate()
+    log.info(f"Retrain: make_dataset.py STDOUT:\n{stdout}")
+    if process.returncode != 0:
+        log.error(f"Retrain: make_dataset.py STDERR:\n{stderr}")
+        raise Exception(f"Retrain: make_dataset.py failed. Error: {stderr}")
+    run_id_line = [line for line in stdout.splitlines() if line.startswith("RUN_ID:")]
+    if not run_id_line:
+        raise Exception("Retrain: make_dataset.py did not output RUN_ID.")
+    actual_run_id = run_id_line[-1].split("RUN_ID:")[1].strip()
+    kwargs['ti'].xcom_push(key='new_dataset_run_id', value=actual_run_id)
+    return actual_run_id
+
+def callable_train_candidate_model_and_get_mlflow_id(**kwargs):
+    ti = kwargs['ti']
+    new_dataset_run_id = ti.xcom_pull(task_ids='process_all_data_for_retraining', key='new_dataset_run_id')
+    if not new_dataset_run_id:
+        raise ValueError("Could not pull new_dataset_run_id from XComs for training.")
+
+    script_path = str(TRAIN_SCRIPT)
+    config_file_path = str(CONFIG_PATH)
+    
+    # MLflow tracking URI from params or environment
+    with open(CONFIG_PATH, 'r') as f:
+        params = yaml.safe_load(f)
+    mlflow_tracking_uri = os.environ.get('MLFLOW_TRACKING_URI', params['mlflow'].get('tracking_uri'))
+    
+    command = [
+        "python", script_path,
+        "--config", config_file_path,
+        "--run_id", new_dataset_run_id # This is the dataset_run_id
+    ]
+    env = os.environ.copy()
+    env['MLFLOW_TRACKING_URI'] = mlflow_tracking_uri
+    env['PYTHONPATH'] = f"{PROJECT_ROOT}:{PROJECT_ROOT}/src:{env.get('PYTHONPATH', '')}"
+
+    log.info(f"Retrain: Executing training command: {' '.join(command)}")
+    process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
+    stdout, stderr = process.communicate()
+    log.info(f"Retrain: train_model.py STDOUT:\n{stdout}")
+
+    if process.returncode != 0:
+        log.error(f"Retrain: train_model.py STDERR:\n{stderr}")
+        raise Exception(f"Retrain: train_model.py failed. Error: {stderr}")
+
+    # train_model.py should print "TRAINING_SUCCESS_MLFLOW_RUN_ID:<actual_mlflow_run_id>"
+    mlflow_run_id_line = [line for line in stdout.splitlines() if line.startswith("TRAINING_SUCCESS_MLFLOW_RUN_ID:")]
+    if not mlflow_run_id_line:
+        raise Exception("Retrain: train_model.py did not output TRAINING_SUCCESS_MLFLOW_RUN_ID.")
+    
+    candidate_model_mlflow_run_id = mlflow_run_id_line[-1].split("TRAINING_SUCCESS_MLFLOW_RUN_ID:")[1].strip()
+    log.info(f"Retrain: Candidate model trained. MLflow Run ID: {candidate_model_mlflow_run_id}")
+    
+    ti.xcom_push(key='candidate_model_mlflow_run_id', value=candidate_model_mlflow_run_id)
+    # Also push the dataset_run_id it was trained on, for the evaluation task
+    ti.xcom_push(key='candidate_training_dataset_run_id', value=new_dataset_run_id)
+    return candidate_model_mlflow_run_id
+
+
+def callable_evaluate_and_promote_candidate(**kwargs):
+    ti = kwargs['ti']
+    candidate_mlflow_run_id = ti.xcom_pull(task_ids='train_candidate_model_task', key='candidate_model_mlflow_run_id')
+    # This is the dataset_run_id the CANDIDATE was trained on, used to load ITS test set
+    candidate_dataset_run_id = ti.xcom_pull(task_ids='train_candidate_model_task', key='candidate_training_dataset_run_id')
+
+    if not candidate_mlflow_run_id or not candidate_dataset_run_id:
+        log.error("Missing candidate_mlflow_run_id or candidate_dataset_run_id from XComs.")
+        return "do_not_promote_candidate_task" # Default branch
+
+    with open(CONFIG_PATH, 'r') as f:
+        params = yaml.safe_load(f)
+    
+    db_config = params['database']
+    mlflow_cfg = params['mlflow']
+    mlflow_tracking_uri = os.environ.get('MLFLOW_TRACKING_URI', mlflow_cfg.get('tracking_uri'))
+    registered_model_name = mlflow_cfg.get('experiment_name')
+    # Define a promotion threshold, e.g., candidate's MAPE must be X% better or some absolute value.
+    # For simplicity, let's say candidate is promoted if its test MAPE is lower than production's last known MAPE.
+    # This is a simplified comparison; a proper A/B test or shadow deployment is more robust.
+    promotion_decision_metric = params.get('model_promotion', {}).get('metric', 'avg_mape_test') # from train_model eval output
+    promotion_higher_is_better = params.get('model_promotion', {}).get('higher_is_better', False) # for MAPE, lower is better
+
+    mlflow.set_tracking_uri(mlflow_tracking_uri)
+    client = MlflowClient()
+
+    # --- 1. Evaluate Candidate Model ---
+    candidate_model_uri = f"runs:/{candidate_mlflow_run_id}/model" # Path to model artifact
+    log.info(f"Evaluating candidate model from URI: {candidate_model_uri}")
+    
+    # Load candidate model's test data (X_test_scaled, y_test_scaled, y_scalers for this candidate_dataset_run_id)
+    # This requires importing or defining evaluation logic here.
+    # For brevity, assume we can get the key metric (e.g., avg_mape_test) from the candidate's MLflow run.
+    candidate_run_details = client.get_run(candidate_mlflow_run_id)
+    candidate_metric_value = candidate_run_details.data.metrics.get(f"final_{promotion_decision_metric}") # final_avg_mape_test
+    
+    if candidate_metric_value is None:
+        log.warning(f"Metric '{promotion_decision_metric}' not found for candidate model {candidate_mlflow_run_id}. Cannot compare.")
+        return "do_not_promote_candidate_task"
+    log.info(f"Candidate model ({candidate_mlflow_run_id}) metric ({promotion_decision_metric}): {candidate_metric_value}")
+
+    # --- 2. Get Performance of Current Production Model (Simplified) ---
+    # Ideally, you'd re-evaluate production model on the SAME new test set if possible,
+    # or use its last reported test metric, or average recent monitored performance.
+    # For this example, let's fetch the metric from the MLflow run of the current Production model.
+    prod_model_metric_value = None
+    latest_prod_versions = client.get_latest_versions(name=registered_model_name, stages=["Production"])
+    if latest_prod_versions:
+        prod_version_obj = sorted(latest_prod_versions, key=lambda v: int(v.version), reverse=True)[0]
+        prod_mlflow_run_id = prod_version_obj.run_id
+        prod_run_details = client.get_run(prod_mlflow_run_id)
+        prod_model_metric_value = prod_run_details.data.metrics.get(f"final_{promotion_decision_metric}")
+        log.info(f"Current Production model ({prod_mlflow_run_id}) metric ({promotion_decision_metric}): {prod_model_metric_value}")
+    else:
+        log.info("No current Production model to compare against. Candidate will be promoted by default if it has a metric.")
+        # If no production model, promote if candidate is valid
+        if candidate_metric_value is not None:
+             is_candidate_better = True # First model
+        else:
+            return "do_not_promote_candidate_task"
+
+
+    # --- 3. Compare and Decide ---
+    if prod_model_metric_value is not None: # If there's a prod model to compare to
+        if promotion_higher_is_better:
+            is_candidate_better = candidate_metric_value > prod_model_metric_value
+        else: # Lower is better (e.g., for MAPE, RMSE)
+            is_candidate_better = candidate_metric_value < prod_model_metric_value
+    # If prod_model_metric_value is None (no prod model was found with the metric), is_candidate_better is already True if candidate_metric_value exists.
+
+    if is_candidate_better:
+        log.info("Candidate model is better than current production (or no production model exists). Promoting.")
+        # Find the model version associated with the candidate_mlflow_run_id
+        # The train_model.py script registers the model. We need its version.
+        # This is a bit tricky as log_model doesn't directly return the version if it's new.
+        # We can search for the version linked to candidate_mlflow_run_id.
+        versions = client.search_model_versions(f"run_id='{candidate_mlflow_run_id}'")
+        if not versions:
+            log.error(f"No model version found in registry for run_id {candidate_mlflow_run_id}. Cannot promote.")
+            return "do_not_promote_candidate_task"
+        
+        candidate_version = versions[0].version # Assuming first one is the one we want
+        log.info(f"Transitioning model '{registered_model_name}' version {candidate_version} (run_id {candidate_mlflow_run_id}) to Production.")
+        
+        # Archive existing Production versions first (optional but good practice)
+        for old_prod_version in latest_prod_versions:
+            if old_prod_version.version != candidate_version : # Don't archive itself if already there
+                log.info(f"Archiving old Production version: {old_prod_version.version}")
+                client.transition_model_version_stage(
+                    name=registered_model_name,
+                    version=old_prod_version.version,
+                    stage="Archived"
+                )
+        
+        client.transition_model_version_stage(
+            name=registered_model_name,
+            version=candidate_version,
+            stage="Production",
+            archive_existing_versions=False # We did it manually above
+        )
+        log.info(f"Model version {candidate_version} successfully promoted to Production.")
+        return "promotion_complete_task"
+    else:
+        log.info("Candidate model is not better than current production. Not promoting.")
+        return "do_not_promote_candidate_task"
+
+# --- Default Arguments ---
+default_args_retrain = { # Use a different name to avoid clashes if in same Python interpreter context
+    'owner': 'airflow_mlops_team',
+    'depends_on_past': False, # Retraining can run independently of past retraining success
+    'email_on_failure': True,
+    'email': ['your_email@example.com'],
+    'email_on_retry': False,
+    'retries': 1,
+    'retry_delay': pendulum.duration(minutes=2),
+}
+
+# --- DAG Definition ---
+with DAG(
+    dag_id=yaml.safe_load(open(CONFIG_PATH))['airflow_dags']['retraining_pipeline_dag_id'],
+    default_args=default_args_retrain,
+    description='Stock model retraining pipeline: processes data, optimizes, trains, evaluates, and promotes.',
+    schedule=None, # Triggered by daily_ops_dag or manually
+    start_date=pendulum.datetime(2023, 1, 1, tz="UTC"),
+    catchup=False,
+    tags=['mlops', 'retraining', 'stock_prediction'],
+) as dag_retrain: # Use a different variable name for the DAG object
+
+    task_init_db_retrain = PythonOperator(
+        task_id='initialize_database_for_retraining',
+        python_callable=callable_initialize_database_retrain,
+    )
+
+    task_process_all_data_retrain = PythonOperator(
+        task_id='process_all_data_for_retraining',
+        python_callable=callable_run_make_dataset_full_process_retrain,
+    )
+
+    new_dataset_run_id_xcom = "{{ ti.xcom_pull(task_ids='process_all_data_for_retraining', key='new_dataset_run_id') }}"
+
+    task_build_features_retrain = BashOperator(
+        task_id='build_features_for_retraining',
+        bash_command=f"python {BUILD_FEATURES_SCRIPT} --config {CONFIG_PATH} --run_id \"{new_dataset_run_id_xcom}\"",
+        env={'PYTHONPATH': f"{PROJECT_ROOT}:{PROJECT_ROOT}/src:{os.environ.get('PYTHONPATH', '')}"},
+    )
+
+    task_optimize_hyperparams_retrain = BashOperator(
+        task_id='optimize_hyperparams_for_retraining',
+        bash_command=f"python {OPTIMIZE_SCRIPT} --config {CONFIG_PATH} --run_id \"{new_dataset_run_id_xcom}\"",
+        env={'PYTHONPATH': f"{PROJECT_ROOT}:{PROJECT_ROOT}/src:{os.environ.get('PYTHONPATH', '')}"},
+    )
+
+    # This task now also needs to push the MLflow run ID of the trained candidate model
+    task_train_candidate_model = PythonOperator(
+        task_id='train_candidate_model_task',
+        python_callable=callable_train_candidate_model_and_get_mlflow_id,
+    )
+
+    evaluate_and_promote_branch_op = BranchPythonOperator(
+        task_id='evaluate_and_promote_candidate_branch',
+        python_callable=callable_evaluate_and_promote_candidate,
+    )
+
+    # Task IDs for promotion branch outcomes
+    # These must match the strings returned by callable_evaluate_and_promote_candidate
+    promotion_done_task_id = "promotion_complete_task" 
+    no_promotion_task_id = "do_not_promote_candidate_task"
+
+    task_promotion_complete = DummyOperator(
+        task_id=promotion_done_task_id,
+    )
+    task_do_not_promote = DummyOperator(
+        task_id=no_promotion_task_id,
+    )
+
+    # Define Task Dependencies for Retraining DAG
+    task_init_db_retrain >> task_process_all_data_retrain
+    task_process_all_data_retrain >> task_build_features_retrain
+    task_build_features_retrain >> task_optimize_hyperparams_retrain
+    task_optimize_hyperparams_retrain >> task_train_candidate_model
+    task_train_candidate_model >> evaluate_and_promote_branch_op
+    evaluate_and_promote_branch_op >> [task_promotion_complete, task_do_not_promote]
+
+```
+
+**Key Changes and Considerations for Phase 3 DAGs:**
+
+1.  **DAG IDs from `params.yaml`**: Both DAGs now fetch their `dag_id` from the `params.yaml` file. Ensure this is configured:
+    ```yaml
+    # In params.yaml
+    airflow_dags:
+      daily_operations_dag_id: "daily_stock_operations_prod" # Example name
+      retraining_pipeline_dag_id: "stock_model_retraining_prod" # Example name
+      # Task IDs used for branching in daily_ops_dag
+      retraining_trigger_task_id: "trigger_retraining_pipeline_task"
+      no_retraining_task_id: "no_retraining_needed_task"
+      # (Optional) Task IDs used for branching in retraining_dag (if you add more branches)
+      # promotion_complete_task_id: "promotion_complete_task"
+      # no_promotion_task_id: "do_not_promote_candidate_task"
+    ```
+2.  **`daily_stock_operations_dag.py`:**
+    *   **Schedule:** Set to a production-like schedule (e.g., `0 1 * * 1-5` for 1 AM UTC on weekdays). Adjust as per your market.
+    *   **`callable_branch_on_monitoring_result`:** This Python callable now interprets the output from `monitor_performance.py` (which should be like `NEXT_TASK_ID:actual_task_id_to_run`) and returns the `actual_task_id_to_run` for the `BranchPythonOperator`.
+    *   **`TriggerDagRunOperator` (`task_trigger_retraining`):** This task is triggered if the monitoring branch decides to retrain. It kicks off the `stock_model_retraining_dag.py`.
+    *   **`DummyOperator` (`task_no_retraining`):** Represents the path where no retraining is needed.
+3.  **`stock_model_retraining_dag.py`:**
+    *   **Schedule:** `None` (triggered only).
+    *   **`callable_train_candidate_model_and_get_mlflow_id`:** Changed `task_train_final_model` to a `PythonOperator` for better control in capturing the MLflow Run ID of the *candidate model*. This is crucial for the evaluation step. The Python script `train_model.py` must print `TRAINING_SUCCESS_MLFLOW_RUN_ID:<id>` for this to work.
+    *   **`callable_evaluate_and_promote_candidate`:** This new `PythonOperator` callable implements the logic to:
+        *   Load the newly trained candidate model (using its MLflow run ID from XCom).
+        *   Load the current "Production" model.
+        *   Compare their performance (currently simplified to fetching metrics from their MLflow runs; a more robust approach would re-evaluate both on the *exact same, latest test set* derived from the `new_dataset_run_id`).
+        *   If the candidate is better, it transitions the candidate model's version to the "Production" stage in MLflow Model Registry and archives old "Production" versions.
+    *   **Branching for Promotion:** A `BranchPythonOperator` (`evaluate_and_promote_branch_op`) directs flow to either a "promotion complete" dummy task or a "do not promote" dummy task.
+4.  **PYTHONPATH**: Consistently added to `env` for `BashOperator` tasks to ensure your `src` modules are importable.
+5.  **Error Handling in Callables**: Callables are made more robust by raising exceptions on critical failures (e.g., if a production model isn't found or an XCom value is missing), which will fail the Airflow task.
+6.  **XCom Parsing in Daily DAG**: The parsing `{{ ti.xcom_pull(...).split('OUTPUT_PATH:')[1].strip() }}` for the input sequence path is still a bit fragile. If `prepare_input_daily` task becomes a `PythonOperator`, it can push just the path string to XComs, making the pull cleaner. For now, it's kept as `BashOperator` to align with previous stages, but this is an area for future refinement.
+
+**Final Steps Before "Production":**
+
+1.  **Thoroughly Test Both DAGs:**
+    *   Trigger `daily_stock_operations_dag.py` manually.
+        *   Verify it completes all steps up to monitoring.
+        *   Manually create conditions (e.g., by altering a historical prediction or actual price) where `monitor_performance.py` would decide to retrain. Verify that `task_trigger_retraining` is executed.
+    *   Trigger `stock_model_retraining_dag.py` manually (or let the daily DAG trigger it).
+        *   Verify all steps complete, a new model is trained, and it's logged to MLflow.
+        *   Verify the evaluation and promotion logic. Check MLflow Model Registry to see if stages are updated correctly.
+2.  **Review `params.yaml`**: Ensure all paths, DAG IDs, thresholds, and MLflow configurations are correct.
+3.  **Email Alerts**: Configure Airflow's email settings and update `email` in `default_args` if you want notifications on failure.
+4.  **Resource Allocation**: For production, consider the resources (CPU, memory) your Airflow workers and other services (Postgres, MLflow) will need.
+5.  **Logging Levels**: Adjust logging levels in your Python scripts and Airflow for production (e.g., `INFO` might be sufficient, `DEBUG` for troubleshooting).
+
+This completes the plan for implementing the core MLOps pipeline with Airflow orchestration! It's a lot, so take it step-by-step.
