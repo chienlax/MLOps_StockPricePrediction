@@ -9,6 +9,7 @@ x-airflow-common: &airflow-common
     AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
     AIRFLOW__MLFLOW__TRACKING_URI: ${MLFLOW_TRACKING_URI:-http://mlflow-server:5000}
     MLFLOW_TRACKING_URI: ${MLFLOW_TRACKING_URI:-http://mlflow-server:5000}
+    PYTHONPATH: /opt/airflow
   volumes:
     - ./airflow/dags:/opt/airflow/dags:rw
     - ./airflow/logs:/opt/airflow/logs:rw
@@ -78,23 +79,23 @@ services:
       timeout: 30s
       retries: 5
 
-  frontend:
-    build:
-      context: .
-      dockerfile: ./Dockerfile.frontend
-    container_name: stockpred-frontend
-    ports:
-      - "8000:8000" #"8000:80"
-    command: uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload 
-    volumes:
-    #  - ./data:/usr/share/nginx/html/data:ro
-      - ./data:/opt/airflow/data:ro # Mount the entire data directory from the host read-only
-      - ./src:/opt/airflow/src:ro # Assuming uvicorn runs from /opt/airflow
-      - ./templates:/opt/airflow/templates:ro # Mount templates read-only
-    environment:
-      - PYTHONPATH=/opt/airflow
-    depends_on:
-      - airflow-webserver
+  # frontend:
+  #   build:
+  #     context: .
+  #     dockerfile: ./Dockerfile.frontend
+  #   container_name: stockpred-frontend
+  #   ports:
+  #     - "8000:8000" #"8000:80"
+  #   command: uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload 
+  #   volumes:
+  #   #  - ./data:/usr/share/nginx/html/data:ro
+  #     - ./data:/opt/airflow/data:ro # Mount the entire data directory from the host read-only
+  #     - ./src:/opt/airflow/src:ro # Assuming uvicorn runs from /opt/airflow
+  #     - ./templates:/opt/airflow/templates:ro # Mount templates read-only
+  #   environment:
+  #     - PYTHONPATH=/opt/airflow
+  #   depends_on:
+  #     - airflow-webserver
 
 volumes:
   airflow-db-volume:
