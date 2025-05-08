@@ -6,23 +6,38 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import DataLoader, TensorDataset
 import os
 import sys
 import optuna
-from pathlib import Path
 import logging
-from datetime import datetime
-from model_definitions import StockLSTM, StockLSTMWithAttention, StockLSTMWithCrossStockAttention
-from evaluate_model import evaluate_model  # We need evaluation during objective calculation
-from src.utils.db_utils import (
-    get_db_connection,
-    load_scaled_features,
-    load_scalers,
-    save_optimization_results
-)
 
-# Set up logging
+from pathlib import Path
+from torch.utils.data import DataLoader, TensorDataset
+from datetime import datetime
+from typing import Optional, Tuple, Dict, Any
+
+try:
+    from .model_definitions import StockLSTM, StockLSTMWithAttention, StockLSTMWithCrossStockAttention
+    from .evaluate_model import evaluate_model
+except ImportError: # Fallback for direct execution if src/models is not a package in PYTHONPATH
+    from model_definitions import StockLSTM, StockLSTMWithAttention, StockLSTMWithCrossStockAttention
+    from evaluate_model import evaluate_model
+
+try:
+    from src.utils.db_utils import (
+        get_db_connection,
+        load_scaled_features,
+        load_scalers,
+        save_optimization_results
+    )
+except ImportError:
+    sys.path.append(str(Path(__file__).resolve().parents[1])) # Add 'src' to path
+    from utils.db_utils import (
+        load_scaled_features,
+        load_scalers,
+        save_optimization_results
+    )
+
 logger = logging.getLogger(__name__)
 if not logger.handlers:
     handler = logging.StreamHandler()
@@ -31,6 +46,8 @@ if not logger.handlers:
     handler.setFormatter(formatter)
     logger.addHandler(handler)
     logger.setLevel(logging.INFO)
+
+# ------------------------------------------------------------------
 
 def objective(trial, X_train, y_train, X_test, y_test, num_features, num_stocks, y_scalers, device):
     """Optuna objective function for hyperparameter optimization"""
@@ -125,84 +142,96 @@ def objective(trial, X_train, y_train, X_test, y_test, num_features, num_stocks,
     
     return best_val_loss
 
+# ------------------------------------------------------------------
 
-def run_optimization(config_path: str):
-    """Run hyperparameter optimization using PostgreSQL database."""
-    with open(config_path, 'r') as f:
-        params = yaml.safe_load(f)
+def run_optimization(config_path: str, run_id_arg: str) -> tuple[Optional[dict], Optional[str]]:
+    """
+    Run hyperparameter optimization using data from a specific run_id.
+    Args:
+        config_path (str): Path to the params.yaml configuration file.
+        run_id_arg (str): The specific run_id for the scaled dataset to use.
+    Returns:
+        tuple[Optional[dict], Optional[str]]: (best_params, run_id_arg) if successful, (None, None) otherwise.
+    """
+    try:
+        with open(config_path, 'r') as f:
+            params = yaml.safe_load(f)
 
-    # Load database configuration
-    db_config = params['database']
-    logger.info(f"Using PostgreSQL database at {db_config['host']}:{db_config['port']}")
-    
-    # Get run_id from params
-    run_id = params.get('run_id')
-    if not run_id:
-        logger.warning("No run_id provided in params, will attempt to use most recent data")
-        run_id = None
-
-    n_trials = params['optimization']['n_trials']
-
-    # Device setup
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    logger.info(f"Using device: {device}")
-
-    # 1. Load Scaled Data from database
-    logger.info(f"--- Loading Scaled Data from database ---")
-    X_train_scaled = load_scaled_features(db_config, run_id, 'X_train')
-    y_train_scaled = load_scaled_features(db_config, run_id, 'y_train')
-    X_test_scaled = load_scaled_features(db_config, run_id, 'X_test')
-    y_test_scaled = load_scaled_features(db_config, run_id, 'y_test')
-    
-    if any(data is None for data in [X_train_scaled, y_train_scaled, X_test_scaled, y_test_scaled]):
-        logger.error("Failed to load scaled data from database")
-        raise ValueError("Failed to load scaled data from database")
+        # Load database configuration
+        db_config = params['database']
+        logger.info(f"Using PostgreSQL database at {db_config['host']}:{db_config['port']}")
         
-    logger.info(f"X_train_scaled shape: {X_train_scaled.shape}")
-    logger.info(f"y_train_scaled shape: {y_train_scaled.shape}")
-    logger.info("--- Finished Loading Scaled Data ---")
+        # Get run_id from params
+        run_id = params.get('run_id')
+        if not run_id:
+            logger.warning("No run_id provided in params, will attempt to use most recent data")
+            run_id = None
 
-    # 2. Load Scalers from database
-    logger.info(f"--- Loading Scalers from database ---")
-    scalers = load_scalers(db_config, run_id)
-    if scalers is None:
-        logger.error("Failed to load scalers from database")
-        raise ValueError("Failed to load scalers from database")
+        n_trials = params['optimization']['n_trials']
+
+        # Device setup
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        logger.info(f"Using device: {device}")
+
+        # 1. Load Scaled Data from database
+        logger.info(f"--- Loading Scaled Data from database ---")
+        X_train_scaled = load_scaled_features(db_config, run_id, 'X_train')
+        y_train_scaled = load_scaled_features(db_config, run_id, 'y_train')
+        X_test_scaled = load_scaled_features(db_config, run_id, 'X_test')
+        y_test_scaled = load_scaled_features(db_config, run_id, 'y_test')
         
-    y_scalers = scalers['y_scalers']
-    logger.info("--- Finished Loading Scalers ---")
+        if any(data is None for data in [X_train_scaled, y_train_scaled, X_test_scaled, y_test_scaled]):
+            logger.error("Failed to load scaled data from database")
+            raise ValueError("Failed to load scaled data from database")
+            
+        logger.info(f"X_train_scaled shape: {X_train_scaled.shape}")
+        logger.info(f"y_train_scaled shape: {y_train_scaled.shape}")
+        logger.info("--- Finished Loading Scaled Data ---")
 
+        # 2. Load Scalers from database
+        logger.info(f"--- Loading Scalers from database ---")
+        scalers = load_scalers(db_config, run_id)
+        if scalers is None:
+            logger.error("Failed to load scalers from database")
+            raise ValueError("Failed to load scalers from database")
+            
+        y_scalers = scalers['y_scalers']
+        logger.info("--- Finished Loading Scalers ---")
 
-    num_stocks = y_train_scaled.shape[2]
-    num_features = X_train_scaled.shape[3]  # Note the index change
+        num_stocks = y_train_scaled.shape[2]
+        num_features = X_train_scaled.shape[3]  # Note the index change
 
-    # 3. Run Optuna Study
-    logger.info(f"--- Starting Optuna Optimization ({n_trials} trials) ---")
-    study = optuna.create_study(direction="minimize")
-    study.optimize(lambda trial: objective(
-        trial, X_train_scaled, y_train_scaled, X_test_scaled, y_test_scaled,
-        num_features, num_stocks, y_scalers, device
-    ), n_trials=n_trials)
-    logger.info("--- Finished Optuna Optimization ---")
+        # 3. Run Optuna Study
+        logger.info(f"--- Starting Optuna Optimization ({n_trials} trials) ---")
+        study = optuna.create_study(direction="minimize")
+        study.optimize(lambda trial: objective(
+            trial, X_train_scaled, y_train_scaled, X_test_scaled, y_test_scaled,
+            num_features, num_stocks, y_scalers, device
+        ), n_trials=n_trials)
+        logger.info("--- Finished Optuna Optimization ---")
 
-    # 4. Save Best Parameters to database
-    logger.info(f"Best trial value (loss): {study.best_value}")
-    logger.info(f"Best parameters: {study.best_params}")
-    logger.info(f"--- Saving Best Parameters to database ---")
-    save_optimization_results(db_config, run_id, study.best_params)
-    logger.info("--- Finished Saving Best Parameters ---")
-    
-    # Save to file if specified
-    if 'output_paths' in params and 'best_params_path' in params['output_paths']:
-        best_params_output_path = Path(params['output_paths']['best_params_path'])
-        best_params_output_path.parent.mkdir(parents=True, exist_ok=True)
-        logger.info(f"--- Also saving Best Parameters to file: {best_params_output_path} ---")
-        with open(best_params_output_path, 'w') as f:
-            json.dump(study.best_params, f, indent=4)
-    
-    return study.best_params, run_id
+        # 4. Save Best Parameters to database
+        logger.info(f"Best trial value (loss): {study.best_value}")
+        logger.info(f"Best parameters: {study.best_params}")
+        logger.info(f"--- Saving Best Parameters to database ---")
+        save_optimization_results(db_config, run_id, study.best_params)
+        logger.info("--- Finished Saving Best Parameters ---")
+        
+        # Save to file if specified
+        if 'output_paths' in params and 'best_params_path' in params['output_paths']:
+            best_params_output_path = Path(params['output_paths']['best_params_path'])
+            best_params_output_path.parent.mkdir(parents=True, exist_ok=True)
+            logger.info(f"--- Also saving Best Parameters to file: {best_params_output_path} ---")
+            with open(best_params_output_path, 'w') as f:
+                json.dump(study.best_params, f, indent=4)
+        
+        return study.best_params, run_id
 
+    except Exception as e:
+        logger.error(f"Error during optimization for run_id {run_id_arg}: {e}", exc_info=True)
+        return None, None
 
+# ------------------------------------------------------------------
 
 if __name__ == '__main__':
     try:
