@@ -1,6 +1,6 @@
 data_loading:
   tickers: ['AAPL', 'MA', 'CSCO', 'MSFT', 'AMZN', 'GOOG', 'IBM']
-  period: "1y"
+  period: "1mo"
   interval: "1d"
   fetch_delay: 10
 

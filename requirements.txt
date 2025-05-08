@@ -1178,7 +1178,7 @@ wtforms==3.2.1
     #   flask-wtf
 yarl==1.19.0
     # via aiohttp
-yfinance==0.2.55
+yfinance==0.2.59
     # via -r requirements.in
 zc-lockfile==3.0.post1
     # via dvc

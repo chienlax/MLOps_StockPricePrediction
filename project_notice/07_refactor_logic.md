@@ -1,52 +1,6 @@
-You've hit on a very important point! It's easy to get lost in the details of individual script changes. Let's pause and look at the "forest" before we plant more "trees." I'll walk you through my internal thinking process to explain the overall logic flow of what we've built so far and how Airflow and MLflow are *intended* to orchestrate these pieces.
-
-**My Internal Thinking Process to Explain the Current Logic Flow:**
-
-1.  **Identify the "Why":** The core reason for these refactorings is to move from a manual, potentially inconsistent process to an automated, versioned, and monitored MLOps pipeline. This means each script needs to be a well-defined, callable unit that can be managed by an orchestrator.
-
-2.  **Deconstruct into Core Workflows:** I see two primary, interconnected workflows emerging from our design:
-    *   **A. The Model Training/Retraining Workflow:** This is the sequence of steps that takes raw data and produces a trained, versioned model.
-    *   **B. The Daily Operational Workflow:** This is what runs every day to fetch new data, make predictions with the current best model, and monitor its performance.
-
-3.  **Trace the Data and Artifact Lineage (The `run_id` Story):** The `dataset_run_id` is the thread that ties together a specific version of data through its transformation stages in the *training workflow*.
-    *   A specific model, when trained, will be linked to the `dataset_run_id` it used. This link is crucial for reproducibility and debugging.
-    *   MLflow will assign its own `mlflow_model_run_id` to each training execution, and we log the `dataset_run_id` as a parameter within that MLflow run.
-
-4.  **Pinpoint Key Decision/Interaction Points:**
-    *   How does the system know *when* to retrain? (Answer: The monitoring script in the daily workflow).
-    *   How does the daily prediction process know *which model* and *which scalers/features* to use? (Answer: It queries MLflow Model Registry for the "Production" model and then uses the `dataset_run_id` associated with that production model to get the correct scalers/feature definitions).
-
-5.  **Define the Role of Each Tool:**
-    *   **Python Scripts:** Encapsulate specific logic (data fetching, feature engineering, training, prediction, monitoring). They are now designed to be callable with parameters (especially `run_id`).
-    *   **PostgreSQL:** Acts as our "Offline Feature Store" / "Intermediate Artifact Store." It holds:
-        *   `raw_stock_data`: The source of truth for market data.
-        *   `processed_feature_data`: Versioned snapshots of data ready for scaling and sequencing (keyed by `dataset_run_id`).
-        *   `scaled_feature_sets`: Versioned scaled data (keyed by `dataset_run_id`).
-        *   `scalers`: Versioned scalers (keyed by `dataset_run_id`).
-        *   `optimization_results`: Versioned best hyperparameters (keyed by `dataset_run_id`).
-        *   `latest_predictions`: Stores the most recent predictions for each ticker, along with the `mlflow_model_run_id` of the model that made them. This is for the API and for quick access by the monitoring script.
-        *   `model_performance_log`: Historical performance metrics for models, linked to the `mlflow_model_run_id`.
-    *   **MLflow:**
-        *   **Experiment Tracking:** During `train_model.py`, all parameters (including `dataset_run_id`), metrics, and model artifacts are logged.
-        *   **Model Registry:** Trained models are registered. We'll use stages like "Staging" and "Production" to manage model lifecycle. The daily prediction script will load the "Production" model.
-        *   **Metadata Source:** Provides information about models, such as the `dataset_run_id` they were trained with (because we logged it as a parameter).
-    *   **Airflow (The Orchestrator - How it *will* work):**
-        *   **Scheduling:** Runs the "Daily Operational Workflow" on a schedule.
-        *   **Task Execution:** Executes our Python scripts as tasks (likely using `BashOperator` to call them with CLI arguments, or `PythonOperator` if we refactor mains into callables).
-        *   **Dependency Management:** Defines the order in which tasks run.
-        *   **Parameter Passing (XComs):**
-            *   When `make_dataset.py --mode full_process` (in the retraining workflow) generates a new `dataset_run_id`, Airflow will capture this (e.g., from its stdout) and pass it to subsequent tasks (`build_features.py`, etc.) as a CLI argument.
-            *   When `prepare_prediction_input.py` saves its output to a temp file, Airflow will capture the file path and pass it to `predict_model.py`.
-        *   **Branching:** The `monitor_performance.py` script will output a decision (e.g., a task ID). Airflow's `BranchPythonOperator` will use this to decide whether to trigger the "Model Retraining Workflow" or simply end the daily run.
-        *   **Triggering Other DAGs:** The daily DAG can trigger the retraining DAG.
-
-6.  **Simplify into a Narrative:** Explain the two workflows as stories.
-
----
-
 **Detailed Logic Flow of the Current Implementation (Phases 1 & 2):**
 
-Let's break this down into the two main conceptual pipelines that will eventually be orchestrated by Airflow.
+Two main conceptual pipelines that will eventually be orchestrated by Airflow.
 
 **Pipeline A: The Model Training/Retraining Workflow**
 *(This pipeline is run when a new model needs to be trained, either manually triggered or automatically by the monitoring process).*
