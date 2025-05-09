@@ -27,7 +27,6 @@ try:
         params_glob = yaml.safe_load(f)
 except Exception as e:
     log.error(f"CRITICAL: Could not load params.yaml at {CONFIG_PATH} for DAG definition. Error: {e}")
-    # Fallback or raise error to prevent DAG from loading incorrectly
     params_glob = {
         'airflow_dags': {
             'daily_operations_dag_id': 'daily_stock_operations_fallback_id',
@@ -37,7 +36,6 @@ except Exception as e:
         },
         'mlflow': {'tracking_uri': 'http://mlflow-server:5000'} # Ensure a default
     }
-
 
 # Script paths
 MAKE_DATASET_SCRIPT = PROJECT_ROOT / 'src/data/make_dataset.py'
@@ -49,7 +47,7 @@ PREDICTION_INPUT_TEMP_DIR = "/tmp/prod_daily_pred_inputs" # Unique temp dir for 
 
 # --- Python Callables ---
 def callable_initialize_database_daily(**kwargs):
-    import yaml # Load fresh params inside callable
+    import yaml
     try:
         from src.utils.db_utils import setup_database
     except ImportError:
@@ -143,6 +141,8 @@ def callable_branch_on_monitoring_result_daily(**kwargs): # Renamed
         log.warning(f"Could not determine next task from monitoring output: '{monitoring_output}'. Defaulting to '{no_retraining_branch_task_id}'.")
         return no_retraining_branch_task_id
 
+# ------------------------------------------------------
+
 # --- Default Arguments ---
 default_args_daily = {
     'owner': 'airflow_mlops_prod_team',
@@ -153,6 +153,8 @@ default_args_daily = {
     'retries': 2,
     'retry_delay': pendulum.duration(minutes=5),
 }
+
+# ------------------------------------------------------
 
 # --- DAG Definition ---
 with DAG(
