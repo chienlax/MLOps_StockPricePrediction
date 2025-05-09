@@ -318,14 +318,19 @@ def run_training(config_path: str, run_id_arg: str) -> Optional[str]:
                 
                 # Promote the new version to Production
                 logger.info(f"Transitioning model '{registered_model_name}' version {new_model_version} to 'Production' stage.")
-                client.transition_model_version_stage(
-                    name=registered_model_name,
-                    version=new_model_version,
-                    stage="Production",
-                    archive_existing_versions=False # Set to False as we might have archived above, or handle carefully
-                                                   # If True, it archives *all* other versions currently in "Production".
-                )
-                logger.info(f"Successfully promoted model '{registered_model_name}' version {new_model_version} to 'Production'.")
+                production_alias_name = "Production" # Define consistently
+
+                logger.info(f"Setting alias '{production_alias_name}' for model '{registered_model_name}' version {new_model_version}.")
+                try:
+                    # This will create the alias or update it if it exists
+                    client.set_registered_model_alias(
+                        name=registered_model_name,
+                        alias=production_alias_name,
+                        version=new_model_version
+                    )
+                    logger.info(f"Successfully set alias '{production_alias_name}' to version {new_model_version} of model '{registered_model_name}'.")
+                except Exception as e_alias:
+                    logger.error(f"Failed to set alias '{production_alias_name}' for model '{registered_model_name}' version {new_model_version}: {e_alias}", exc_info=True)
 
         except Exception as e_promote:
             logger.error(f"Failed to promote model version for MLflow run_id {mlflow_model_run_id}: {e_promote}", exc_info=True)
