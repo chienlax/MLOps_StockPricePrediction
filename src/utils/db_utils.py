@@ -97,14 +97,32 @@ def setup_database(db_config: dict) -> None:
         ''')
 
         # Latest predictions
+        # cursor.execute('''
+        # CREATE TABLE IF NOT EXISTS latest_predictions (
+        #     prediction_timestamp TIMESTAMP,
+        #     ticker TEXT NOT NULL,
+        #     predicted_price REAL,
+        #     model_run_id TEXT,
+        #     PRIMARY KEY (ticker)
+        # )
+        # ''')
+
+        # cursor.execute("DROP TABLE IF EXISTS latest_predictions CASCADE;") # Use with caution
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS latest_predictions (
-            prediction_timestamp TIMESTAMP,
+            target_prediction_date DATE NOT NULL, -- Date for which the prediction is made
             ticker TEXT NOT NULL,
             predicted_price REAL,
-            model_run_id TEXT,
-            PRIMARY KEY (ticker)
+            model_mlflow_run_id TEXT,
+            prediction_logged_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP, -- When this record was logged
+            PRIMARY KEY (target_prediction_date, ticker) -- Composite Primary Key
         )
+        ''')
+        logger.info("Ensured 'latest_predictions' table schema is up-to-date.")
+        # Add index if beneficial for querying by ticker and date
+        cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_latest_predictions_ticker_target_date 
+        ON latest_predictions (ticker, target_prediction_date DESC);
         ''')
 
         cursor.execute('''
@@ -143,6 +161,13 @@ def setup_database(db_config: dict) -> None:
     except Exception as e:
         logger.error(f"Error setting up database: {e}")
         raise
+
+    finally:
+        if 'conn' in locals() and conn: # Ensure conn was defined
+            if 'cursor' in locals() and cursor:
+                cursor.close()
+            conn.close()
+
 
 def save_to_raw_table(ticker_symbol: str, data_df: pd.DataFrame, db_config: dict) -> int:
     """
@@ -530,32 +555,48 @@ def load_optimization_results(db_config: dict, run_id: str) -> Optional[dict]:
         logger.error(f"Error loading optimization results: {e}", exc_info=True)
         raise
 
-def save_prediction(db_config: dict, ticker: str, predicted_price: float, model_run_id: Optional[str] = None) -> bool:
-    """Save latest prediction for a ticker to PostgreSQL database."""
+def save_prediction(
+    db_config: dict, 
+    ticker: str, 
+    predicted_price: float, 
+    model_mlflow_run_id: Optional[str],
+    target_prediction_date_str: str # NEW PARAMETER (expecting 'YYYY-MM-DD')
+) -> bool:
+    """
+    Save a prediction for a ticker for a specific target date to PostgreSQL database.
+    Updates if a prediction for that ticker and target_date already exists.
+    """
     try:
         conn = get_db_connection(db_config)
         cursor = conn.cursor()
         
+        # --- MODIFIED SQL and parameters ---
         cursor.execute('''
         INSERT INTO latest_predictions 
-        (prediction_timestamp, ticker, predicted_price, model_run_id)
-        VALUES (CURRENT_TIMESTAMP, %s, %s, %s)
-        ON CONFLICT (ticker) DO UPDATE SET
-            prediction_timestamp = CURRENT_TIMESTAMP,
+        (target_prediction_date, ticker, predicted_price, model_mlflow_run_id, prediction_logged_timestamp)
+        VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)
+        ON CONFLICT (target_prediction_date, ticker) DO UPDATE SET
             predicted_price = EXCLUDED.predicted_price,
-            model_run_id = EXCLUDED.model_run_id
-        ''', (ticker, predicted_price, model_run_id))
+            model_mlflow_run_id = EXCLUDED.model_mlflow_run_id,
+            prediction_logged_timestamp = CURRENT_TIMESTAMP 
+        ''', (target_prediction_date_str, ticker, predicted_price, model_mlflow_run_id))
+        # --- END MODIFIED ---
         
         conn.commit()
-        cursor.close()
-        conn.close()
-        
-        logger.info(f"Saved prediction for {ticker}: {predicted_price}")
+        logger.info(f"Saved/Updated prediction for {ticker} (Target Date: {target_prediction_date_str}): {predicted_price:.4f} (Model Run: {model_mlflow_run_id})")
         return True
-        
+    
     except Exception as e:
-        logger.error(f"Error saving prediction: {e}", exc_info=True)
-        raise
+        logger.error(f"Error saving prediction for {ticker} (Target Date: {target_prediction_date_str}): {e}", exc_info=True)
+        raise # Or return False
+
+    finally:
+        if 'conn' in locals() and conn:
+            if 'cursor' in locals() and cursor:
+                cursor.close()
+            conn.close()
+
+# -----------------------------------------------------------
 
 def get_latest_predictions(db_config: dict, tickers: Optional[list] = None) -> dict:
     """Get latest predictions from PostgreSQL database."""
@@ -595,6 +636,43 @@ def get_latest_predictions(db_config: dict, tickers: Optional[list] = None) -> d
     except Exception as e:
         logger.error(f"Error getting latest predictions: {e}", exc_info=True)
         raise
+
+# ------------------------------------------------------------
+
+def get_prediction_for_date_ticker(
+    db_config: dict, 
+    target_date_str: str, # 'YYYY-MM-DD'
+    ticker: str
+) -> Optional[dict]:
+    """
+    Retrieves the predicted price and model_mlflow_run_id for a specific ticker and target date.
+    """
+    try:
+        conn = get_db_connection(db_config)
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor) # Use DictCursor for easy column access by name
+        
+        cursor.execute("""
+            SELECT predicted_price, model_mlflow_run_id
+            FROM latest_predictions
+            WHERE target_prediction_date = %s AND ticker = %s
+        """, (target_date_str, ticker))
+        
+        result = cursor.fetchone()
+        
+        if result:
+            return dict(result) # Convert DictRow to dict
+        else:
+            return None
+    except Exception as e:
+        logger.error(f"Error getting prediction for {ticker} on {target_date_str}: {e}", exc_info=True)
+        return None # Or raise
+    finally:
+        if 'conn' in locals() and conn:
+            if 'cursor' in locals() and cursor:
+                cursor.close()
+            conn.close()
+
+# ------------------------------------------------------------
 
 # Save daily performance metrics to the database
 def save_daily_performance_metrics(

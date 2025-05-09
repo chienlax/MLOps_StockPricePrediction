@@ -625,26 +625,34 @@ def run_daily_prediction(
             predicted_prices_final[ticker_name] = float(actual_pred_price)
         logger.info(f"Final predicted prices: {predicted_prices_final}")
 
-        # 7. Save predictions to JSON files
+        today_iso = date.today().isoformat() # This is the date the prediction is FOR
+
+        # 7. Save predictions to JSON files (KEEPING THIS FOR API for now)
         predictions_base_dir.mkdir(parents=True, exist_ok=True)
         historical_dir = predictions_base_dir / 'historical'
         historical_dir.mkdir(parents=True, exist_ok=True)
-        today_iso = date.today().isoformat()
-        payload = {"date": today_iso, "predictions": predicted_prices_final, "model_mlflow_run_id": prod_model_origin_mlflow_run_id} # Use origin run_id
+        payload_json = {"date": today_iso, "predictions": predicted_prices_final, "model_mlflow_run_id": prod_model_origin_mlflow_run_id}
         latest_file_path = predictions_base_dir / 'latest_predictions.json'
-        with open(latest_file_path, 'w') as f:
-            json.dump(payload, f, indent=4)
-        logger.info(f"Saved latest predictions to {latest_file_path}")
-        historical_file_path = historical_dir / f"{today_iso}.json"
+        with open(latest_file_path, 'w+') as f:
+            json.dump(payload_json, f, indent=4)
+        logger.info(f"Saved latest predictions to JSON: {latest_file_path}")
+        historical_file_path = historical_dir / f"{today_iso}.json" # The historical file is for today_iso
         with open(historical_file_path, 'w') as f:
-            json.dump(payload, f, indent=4)
-        logger.info(f"Saved historical predictions to {historical_file_path}")
+            json.dump(payload_json, f, indent=4)
+        logger.info(f"Saved historical predictions to JSON: {historical_file_path}")
 
         # 8. Save predictions to PostgreSQL database
-        logger.info("Saving predictions to PostgreSQL database...")
+        logger.info("Saving predictions to PostgreSQL database (with target_prediction_date)...")
         for ticker_name, predicted_price_val in predicted_prices_final.items():
-            save_prediction(db_config, ticker_name, predicted_price_val, prod_model_origin_mlflow_run_id) # Use origin run_id
+            save_prediction(
+                db_config, 
+                ticker_name, 
+                predicted_price_val, 
+                prod_model_origin_mlflow_run_id, # model_mlflow_run_id
+                today_iso  # target_prediction_date_str: prediction is for "today"
+            )
         logger.info("Successfully saved predictions to database.")
+
         
         return True
 

@@ -18,7 +18,9 @@ sys.path.append(str(Path(__file__).resolve().parents[1]))
 from utils.db_utils import (
     get_latest_predictions,
     save_daily_performance_metrics,
-    load_data_from_db 
+    load_data_from_db ,
+    get_prediction_for_date_ticker,
+    get_db_connection
 )
 
 logger = logging.getLogger(__name__)
@@ -66,7 +68,6 @@ def run_monitoring(config_path: str) -> str:
 
         db_config = params['database']
         # Tickers to monitor - should align with what's being predicted
-        # This could come from params['data_loading']['tickers'] or dynamically from latest_predictions table
         tickers_to_monitor = params['data_loading']['tickers'] 
         
         monitoring_cfg = params['monitoring']
@@ -76,7 +77,6 @@ def run_monitoring(config_path: str) -> str:
         airflow_dag_cfg = params.get('airflow_dags', {})
         retraining_task_id = airflow_dag_cfg.get('retraining_trigger_task_id', 'trigger_retraining_pipeline_task') # Task ID in daily DAG
         no_retraining_task_id = airflow_dag_cfg.get('no_retraining_task_id', 'no_retraining_needed_task')
-
 
         prediction_date_to_evaluate = date.today() - timedelta(days=evaluation_lag_days)
         prediction_date_str = prediction_date_to_evaluate.isoformat()
@@ -88,139 +88,111 @@ def run_monitoring(config_path: str) -> str:
         logger.info(f"Monitoring performance for predictions made for date: {prediction_date_str}")
 
         # 1. Fetch predictions made for the evaluation_date
-        # get_latest_predictions returns a dict {ticker: {'timestamp': ..., 'predicted_price': ..., 'model_run_id': ...}}
-        # We need to filter this for the specific prediction_date_to_evaluate if it stores more than one day.
-        # For now, assuming get_latest_predictions gives the most recent, which should be for 'today's prediction'
-        # So, if evaluation_lag_days=1, we need predictions made 'yesterday' for 'yesterday'.
-        # Let's adjust: fetch predictions that were *recorded* around prediction_date_to_evaluate
-        # This part needs careful alignment with how `latest_predictions` table is populated.
-        # Assuming `latest_predictions` stores the prediction for `prediction_date_to_evaluate` made on that day or day before.
-        
-        # Simpler: Assume `latest_predictions` table has one row per ticker, updated daily.
-        # The `prediction_timestamp` in that table tells us when the prediction was stored.
-        # The `payload["date"]` in predict_model.py tells us *for which date* the prediction is.
-        # We need to query `latest_predictions` where the *prediction target date* (not timestamp) matches.
-        # This requires `latest_predictions` to store the target date of the prediction.
-        # Let's assume `db_utils.get_latest_predictions()` is adapted or we query directly.
-        # For now, let's assume `get_latest_predictions` gives us the predictions we need to evaluate.
-        # A robust way: query historical JSONs or adapt DB to store target_prediction_date.
-        
-        # Let's refine: We need to fetch predictions that were *targeted* for `prediction_date_to_evaluate`.
-        # The `latest_predictions.json` and historical files store this.
-        # The `latest_predictions` DB table should ideally store `target_prediction_date`.
-        # If `latest_predictions` DB table's `prediction_timestamp` is the *time of prediction*,
-        # and we assume predictions are made for `date.today()`, then for `evaluation_lag_days=1`,
-        # we look for predictions made `evaluation_lag_days` ago.
-        # This is getting complex. Let's simplify:
-        # Assume the `latest_predictions.json` file (or DB equivalent) correctly stores predictions
-        # with a "date" field indicating the date the prediction is FOR.
+        predictions_data_from_db = {} # To store {ticker: {'predicted_price': val, 'model_mlflow_run_id': id}}
+        unique_model_run_ids_found = set()
 
-        # We will load the historical JSON for the prediction_date_to_evaluate
-        # This is simpler than complex DB queries for now.
-        predictions_base_dir_str = params.get('output_paths', {}).get('predictions_dir', 'data/predictions')
-        historical_pred_file = Path(predictions_base_dir_str) / 'historical' / f"{prediction_date_str}.json"
-        
-        predictions_to_evaluate = {}
-        model_mlflow_run_id_for_these_preds = None
-        if historical_pred_file.exists():
-            with open(historical_pred_file, 'r') as f:
-                pred_data = json.load(f)
-            if pred_data.get("date") == prediction_date_str:
-                predictions_to_evaluate = pred_data.get("predictions", {})
-                model_mlflow_run_id_for_these_preds = pred_data.get("model_mlflow_run_id")
+        for ticker in tickers_to_monitor:
+            pred_info = get_prediction_for_date_ticker(db_config, prediction_date_str, ticker)
+            if pred_info:
+                predictions_data_from_db[ticker] = pred_info
+                if pred_info.get('model_mlflow_run_id'):
+                    unique_model_run_ids_found.add(pred_info['model_mlflow_run_id'])
             else:
-                logger.warning(f"Date mismatch in {historical_pred_file}. Expected {prediction_date_str}, got {pred_data.get('date')}")
-        else:
-            logger.warning(f"Prediction file not found for {prediction_date_str} at {historical_pred_file}")
-
-        if not predictions_to_evaluate or not model_mlflow_run_id_for_these_preds:
-            logger.warning(f"No predictions found or model_run_id missing for {prediction_date_str}. Skipping performance monitoring for this date.")
-            return no_retraining_task_id # Default to no retraining if no data to evaluate
-
-        # 2. Fetch actual prices for evaluation_date and (evaluation_date - 1 day)
-        logger.info(f"Fetching actual prices for {tickers_to_monitor} around {prediction_date_str}...")
-        # Use load_data_from_db and filter for specific dates
-        # This is inefficient if called repeatedly. A dedicated function in db_utils would be better.
-        # `get_actual_prices_for_dates(db_config, tickers, date_list)`
+                logger.warning(f"No prediction found in database for {ticker} on target date {prediction_date_str}.")
         
-        # For simplicity, let's assume we can query raw_stock_data directly here for the two dates.
+        if not predictions_data_from_db:
+            logger.warning(f"No predictions retrieved from database for any ticker on target date {prediction_date_str}. Skipping performance monitoring.")
+            return no_retraining_task_id
+
+        # Determine the model_mlflow_run_id to use for logging in model_performance_log.
+        # If multiple models were used for different tickers (not typical for this setup but possible),
+        # this logic might need refinement. For now, assume one dominant model_run_id or take the first one.
+        if len(unique_model_run_ids_found) > 1:
+            logger.warning(f"Multiple model_mlflow_run_ids found for predictions on {prediction_date_str}: {unique_model_run_ids_found}. Using the first one for overall log.")
+        
+        model_mlflow_run_id_for_these_preds = list(unique_model_run_ids_found)[0] if unique_model_run_ids_found else None
+        
+        if not model_mlflow_run_id_for_these_preds:
+            logger.warning(f"Could not determine a model_mlflow_run_id for predictions on {prediction_date_str}. Performance log will be incomplete.")
+        # --- END MODIFIED ---
+
+        # Fetch actual prices 
         actual_prices_on_eval_date = {}
         actual_prices_on_prev_date = {}
         
-        conn = None # Ensure conn is defined for finally block
+        conn_actuals = None
         try:
-            conn = db_utils.get_db_connection(db_config) # Assuming db_utils is imported
-            cursor = conn.cursor()
+            conn_actuals = get_db_connection(db_config)
+            cursor_actuals = conn_actuals.cursor()
             for ticker in tickers_to_monitor:
                 # Actual for evaluation date
-                cursor.execute(
+                cursor_actuals.execute(
                     "SELECT close FROM raw_stock_data WHERE ticker = %s AND date::date = %s",
-                    (ticker, prediction_date_to_evaluate)
+                    (ticker, prediction_date_to_evaluate) # Use date object here
                 )
-                result = cursor.fetchone()
+                result = cursor_actuals.fetchone()
                 if result: actual_prices_on_eval_date[ticker] = result[0]
 
-                # Actual for previous day (for directional accuracy)
-                prev_business_day = prediction_date_to_evaluate - timedelta(days=1) # Simplistic, doesn't handle weekends/holidays well
-                # A robust solution would use pandas market holiday calendars or fetch a small window and pick latest before eval_date
-                cursor.execute(
+                prev_business_day = prediction_date_to_evaluate - timedelta(days=1) 
+                cursor_actuals.execute(
                     "SELECT close FROM raw_stock_data WHERE ticker = %s AND date::date = %s",
                     (ticker, prev_business_day) 
                 )
-                result_prev = cursor.fetchone()
+                result_prev = cursor_actuals.fetchone()
                 if result_prev: actual_prices_on_prev_date[ticker] = result_prev[0]
         finally:
-            if conn:
-                cursor.close()
-                conn.close()
+            if conn_actuals:
+                if 'cursor_actuals' in locals() and cursor_actuals:
+                    cursor_actuals.close()
+                conn_actuals.close()
 
-        all_metrics = []
+        all_metrics_calculated = []
         retrain_triggered_by_metric = False
 
         for ticker in tickers_to_monitor:
-            predicted_price = predictions_to_evaluate.get(ticker)
+            pred_info = predictions_data_from_db.get(ticker)
+            if not pred_info:
+                continue # Already logged warning if prediction was missing
+
+            predicted_price = pred_info.get('predicted_price')
             actual_price = actual_prices_on_eval_date.get(ticker)
             actual_prev_price = actual_prices_on_prev_date.get(ticker)
 
             if predicted_price is None or actual_price is None:
-                logger.warning(f"Missing predicted or actual price for {ticker} on {prediction_date_str}. Skipping metrics calculation for it.")
+                logger.warning(f"Missing predicted or actual price for {ticker} on {prediction_date_str} for metric calculation. Predicted: {predicted_price}, Actual: {actual_price}")
                 continue
 
-            metrics = {'ticker': ticker, 'prediction_date': prediction_date_str, 'predicted_price': predicted_price, 'actual_price': actual_price}
+            metrics = {'ticker': ticker, 'prediction_date': prediction_date_str, 
+                       'predicted_price': predicted_price, 'actual_price': actual_price}
             metrics['mae'] = mean_absolute_error([actual_price], [predicted_price])
             metrics['rmse'] = np.sqrt(mean_squared_error([actual_price], [predicted_price]))
             if actual_price != 0:
                 metrics['mape'] = mean_absolute_percentage_error([actual_price], [predicted_price])
             else:
-                metrics['mape'] = np.nan # Avoid division by zero
+                metrics['mape'] = np.nan 
 
             metrics['direction_accuracy'] = calculate_directional_accuracy(predicted_price, actual_price, actual_prev_price) if actual_prev_price is not None else np.nan
             
-            logger.info(f"Metrics for {ticker} on {prediction_date_str}: MAPE={metrics['mape']:.4f}, DirAcc={metrics['direction_accuracy']}")
-            all_metrics.append(metrics)
+            logger.info(f"Metrics for {ticker} on {prediction_date_str}: MAPE={metrics['mape']:.4f}, DirAcc={metrics['direction_accuracy'] if not pd.isna(metrics['direction_accuracy']) else 'N/A'}")
+            all_metrics_calculated.append(metrics)
 
-            # Save individual ticker metrics to DB
-            save_daily_performance_metrics(db_config, prediction_date_str, ticker, metrics, model_mlflow_run_id_for_these_preds)
+            # Use model_mlflow_run_id_for_these_preds which should be common for predictions made for this date
+            # If a per-ticker model_run_id was stored and fetched, you could use pred_info['model_mlflow_run_id']
+            model_run_id_to_log = model_mlflow_run_id_for_these_preds if model_mlflow_run_id_for_these_preds else pred_info.get('model_mlflow_run_id')
 
-            # Check thresholds for this ticker
+            save_daily_performance_metrics(db_config, prediction_date_str, ticker, metrics, model_run_id_to_log)
+
+            # Check thresholds
             if not pd.isna(metrics['mape']) and metrics['mape'] > thresholds.get('mape_max', float('inf')):
                 logger.warning(f"TRIGGER: {ticker} MAPE ({metrics['mape']:.4f}) exceeded threshold ({thresholds.get('mape_max')}).")
                 retrain_triggered_by_metric = True
             if not pd.isna(metrics['direction_accuracy']) and metrics['direction_accuracy'] < thresholds.get('direction_accuracy_min', float('-inf')):
                 logger.warning(f"TRIGGER: {ticker} Directional Accuracy ({metrics['direction_accuracy']:.4f}) below threshold ({thresholds.get('direction_accuracy_min')}).")
                 retrain_triggered_by_metric = True
-            # Add checks for other metrics (RMSE, MAE) if defined in thresholds
 
-        if not all_metrics:
+        if not all_metrics_calculated:
             logger.warning("No metrics were calculated for any ticker. Defaulting to no retraining.")
             return no_retraining_task_id
-
-        # Optional: Aggregate metrics (e.g., average MAPE across all monitored tickers)
-        # avg_mape = np.nanmean([m['mape'] for m in all_metrics if 'mape' in m])
-        # logger.info(f"Average MAPE across all tickers: {avg_mape:.4f}")
-        # if avg_mape > thresholds.get('avg_mape_max', float('inf')): # Example for aggregated threshold
-        #     logger.warning(f"TRIGGER: Average MAPE ({avg_mape:.4f}) exceeded threshold.")
-        #     retrain_triggered_by_metric = True
             
         if retrain_triggered_by_metric:
             logger.info("Performance thresholds breached. Triggering retraining pipeline.")
@@ -231,8 +203,7 @@ def run_monitoring(config_path: str) -> str:
 
     except Exception as e:
         logger.error(f"Error in run_monitoring: {e}", exc_info=True)
-        # Default to no retraining on error to avoid unintended retraining loops
-        return params.get('airflow_dags', {}).get('no_retraining_task_id', 'no_retraining_needed_task_on_error')
+        return params.get('airflow_dags', {}).get('no_retraining_task_id', 'no_retraining_needed_task_on_error') # Fallback on error
 
 # -------------------------------------------------------------------
 
