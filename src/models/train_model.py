@@ -8,6 +8,7 @@ import torch.nn as nn
 import torch.optim as optim
 import mlflow
 import mlflow.pytorch
+from mlflow.tracking import MlflowClient
 import os
 import sys
 import logging
@@ -29,7 +30,7 @@ from src.utils.db_utils import (
 logger = logging.getLogger(__name__)
 if not logger.hasHandlers():
     handler = logging.StreamHandler()
-    handler.setLevel(logging.INFO)
+    handler.setLevel(logging.DEBUG)
     formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     handler.setFormatter(formatter)
     logger.addHandler(handler)
@@ -45,6 +46,7 @@ def train_final_model(
     device, training_epochs, plot_output_dir,
     mlflow_experiment_name: str # Pass experiment name
     ):
+
     """Train the final model with the best hyperparameters and log to MLflow"""
     batch_size = best_params['batch_size']
     hidden_size = best_params['hidden_size']
@@ -259,8 +261,8 @@ def run_training(config_path: str, run_id_arg: str) -> Optional[str]:
         logger.info("--- Finished Loading Best Hyperparameters ---")
 
         if X_train_scaled.ndim < 4:
-             logger.error(f"X_train_scaled has unexpected dimensions: {X_train_scaled.ndim}. Expected 4.")
-             return None
+            logger.error(f"X_train_scaled has unexpected dimensions: {X_train_scaled.ndim}. Expected 4.")
+            return None
         num_stocks = X_train_scaled.shape[2]
         num_features = X_train_scaled.shape[3]
 
@@ -278,6 +280,57 @@ def run_training(config_path: str, run_id_arg: str) -> Optional[str]:
             mlflow_experiment_name=mlflow_experiment_name
         )
         logger.info(f"--- Finished Final Model Training. MLflow Run ID for trained model: {mlflow_model_run_id} ---")
+
+        # Promote the model to production or save it as needed
+        logger.info(f"Attempting to promote model version associated with MLflow run: {mlflow_model_run_id}")
+        try:
+            client = MlflowClient()
+            
+            # Get the registered model name from params.yaml (consistent with how it was registered)
+            registered_model_name = mlflow_config.get('experiment_name', "Stock_Price_Prediction_LSTM_Refactored") # Or your specific registered model name key
+
+            # Find the model version that was just created by this MLflow run
+            # Search for model versions linked to the specific mlflow_model_run_id
+            versions = client.search_model_versions(f"run_id='{mlflow_model_run_id}'")
+            
+            if not versions:
+                logger.error(f"No model version found in registry for MLflow run_id {mlflow_model_run_id}. Cannot promote automatically.")
+            else:
+                # Assuming the first one returned is the one we just created.
+                # It's usually sorted by creation time or version number implicitly.
+                # For more robustness, you could sort by version or creation_timestamp.
+                latest_version_for_run = sorted(versions, key=lambda v: int(v.version), reverse=True)[0]
+                new_model_version = latest_version_for_run.version
+
+                logger.info(f"Found new model version: {new_model_version} for registered model '{registered_model_name}' from run_id {mlflow_model_run_id}.")
+
+                # Optional: Archive existing "Production" versions before promoting the new one
+                latest_prod_versions = client.get_latest_versions(name=registered_model_name, stages=["Production"])
+                for old_prod_version in latest_prod_versions:
+                    if old_prod_version.version != new_model_version: # Don't try to archive the one we are about to promote
+                        logger.info(f"Archiving existing Production version: {old_prod_version.version} of model '{registered_model_name}'.")
+                        client.transition_model_version_stage(
+                            name=registered_model_name,
+                            version=old_prod_version.version,
+                            stage="Archived",
+                            archive_existing_versions=False # Important when doing it iteratively
+                        )
+                
+                # Promote the new version to Production
+                logger.info(f"Transitioning model '{registered_model_name}' version {new_model_version} to 'Production' stage.")
+                client.transition_model_version_stage(
+                    name=registered_model_name,
+                    version=new_model_version,
+                    stage="Production",
+                    archive_existing_versions=False # Set to False as we might have archived above, or handle carefully
+                                                   # If True, it archives *all* other versions currently in "Production".
+                )
+                logger.info(f"Successfully promoted model '{registered_model_name}' version {new_model_version} to 'Production'.")
+
+        except Exception as e_promote:
+            logger.error(f"Failed to promote model version for MLflow run_id {mlflow_model_run_id}: {e_promote}", exc_info=True)
+            # Decide if this failure should stop the whole script or just be a warning.
+            # For now, it logs the error and continues.
 
         if final_test_metrics: # If test evaluation was done
             logger.info("\nFinal Training Summary (on test set):")

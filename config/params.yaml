@@ -2,7 +2,7 @@ data_loading:
   tickers: ['AAPL', 'MA', 'CSCO', 'MSFT', 'AMZN', 'GOOG', 'IBM']
   period: "3y"
   interval: "1d"
-  fetch_delay: 5
+  fetch_delay: 3
 
 feature_engineering:
   correlation_threshold: 0.9
