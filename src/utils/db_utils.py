@@ -7,12 +7,9 @@ import os
 import numpy as np
 import pandas as pd
 from pathlib import Path
-from datetime import datetime
-from typing import Optional
-from typing import Dict
+from datetime import datetime, timedelta, date
+from typing import Optional, List, Dict
 from typing import Any
-from typing import List
-from datetime import timedelta 
 
 logger = logging.getLogger(__name__)
 if not logger.hasHandlers():
@@ -777,6 +774,44 @@ def get_latest_prediction_for_all_tickers(db_config: dict) -> list[dict]:
                 cursor.close()
             conn.close()
 
+# ------------------------------------------------------------
+
+def get_latest_target_date_prediction_for_ticker(db_config: dict, ticker: str) -> Optional[dict]:
+    """
+    Retrieves the most recent prediction (latest target_prediction_date)
+    for a single specified ticker.
+    """
+    try:
+        conn = get_db_connection(db_config)
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        
+        query = """
+            SELECT target_prediction_date, predicted_price, model_mlflow_run_id
+            FROM latest_predictions
+            WHERE ticker = %s
+            ORDER BY target_prediction_date DESC
+            LIMIT 1;
+        """
+        cursor.execute(query, (ticker.upper(),))
+        result = cursor.fetchone()
+        
+        if result:
+            return {
+                "target_prediction_date": result["target_prediction_date"].isoformat() if isinstance(result["target_prediction_date"], date) else str(result["target_prediction_date"]),
+                "predicted_price": result["predicted_price"],
+                "model_mlflow_run_id": result["model_mlflow_run_id"]
+            }
+        else:
+            return None
+            
+    except Exception as e:
+        logger.error(f"Error getting latest target date prediction for {ticker} from DB: {e}", exc_info=True)
+        return None
+    finally:
+        if 'conn' in locals() and conn:
+            if 'cursor' in locals() and cursor:
+                cursor.close()
+            conn.close()
 
 # ------------------------------------------------------------
 

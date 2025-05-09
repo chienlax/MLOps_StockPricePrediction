@@ -107,7 +107,7 @@
 #     return templates.TemplateResponse("index.html", {"request": request})
 # #uvicorn src.api.main:app --reload
 
-# src/api/main.py
+
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -117,58 +117,39 @@ from datetime import date, timedelta
 import pandas as pd
 import yfinance as yf
 import yaml 
-import sys # For sys.exit in case of critical config error
+import sys
+import numpy as np # For sanitize_float_list if kept for other parts
+import logging
 
-# --- Path Definitions - Define PROJECT_ROOT_API at the top module level ---
-# Path to project root, assuming api/main.py is in src/api/
+# --- Path Definitions & Config Loading ---
 PROJECT_ROOT_API = Path(__file__).resolve().parents[2] 
 CONFIG_FILE_FOR_API = PROJECT_ROOT_API / "config/params.yaml"
-
-# Static files and Templates directories
 TEMPLATES_DIR = PROJECT_ROOT_API / "templates"
 STATIC_DIR = TEMPLATES_DIR / "static"
 
-
-# --- Load Configuration and DB Utils ---
 DB_CONFIG = None
-# PREDICTIONS_DIR_FOR_API = None # This path will be derived after params_config is loaded
-
-# Logger for FastAPI (define early)
-import logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__) # Define logger at module level
+logger = logging.getLogger(__name__) # Define logger early
 
 try:
-    # Ensure 'src' is in PYTHONPATH if db_utils is not found by default
-    # This might be needed if PYTHONPATH isn't set correctly in the uvicorn environment
-    sys.path.insert(0, str(PROJECT_ROOT_API / "src")) # Add src to path
+    # Ensure 'src' is in PYTHONPATH
+    sys.path.insert(0, str(PROJECT_ROOT_API / "src"))
     from utils.db_utils import (
-        get_db_connection, 
-        get_predictions_for_ticker_in_daterange,
         get_latest_prediction_for_all_tickers,
-        get_all_distinct_tickers_from_predictions
+        get_all_distinct_tickers_from_predictions,
+        get_latest_target_date_prediction_for_ticker # Needed for the new chart
+        # get_predictions_for_ticker_in_daterange # Might not be needed if old chart endpoint is removed
     )
-    
     with open(CONFIG_FILE_FOR_API, 'r') as f_params:
         params_config = yaml.safe_load(f_params)
     DB_CONFIG = params_config.get('database')
-    
     if not DB_CONFIG:
-        logger.error("CRITICAL: Database configuration not found in params.yaml. API cannot function.")
-        # You might want to exit here if DB is absolutely critical for app startup
-        # For now, other endpoints might work if they don't use DB_CONFIG.
-
+        logger.error("CRITICAL API STARTUP: Database configuration not found in params.yaml.")
 except ImportError as e_imp:
-    logger.error(f"CRITICAL: Could not import db_utils. Ensure PYTHONPATH is correct or utils are accessible: {e_imp}", exc_info=True)
-    # API likely cannot function without db_utils.
-    # Consider sys.exit(1) or raise a startup error Uvicorn can catch.
+    logger.error(f"CRITICAL API STARTUP: Could not import db_utils: {e_imp}", exc_info=True)
 except FileNotFoundError:
-    logger.error(f"CRITICAL: Config file {CONFIG_FILE_FOR_API} not found. API cannot load configuration.")
-    # Consider sys.exit(1)
+    logger.error(f"CRITICAL API STARTUP: Config file {CONFIG_FILE_FOR_API} not found.")
 except Exception as e_cfg:
-    logger.error(f"CRITICAL: Error loading params.yaml ({CONFIG_FILE_FOR_API}) or extracting DB config: {e_cfg}", exc_info=True)
-    # Consider sys.exit(1)
-
+    logger.error(f"CRITICAL API STARTUP: Error loading params.yaml or DB config: {e_cfg}", exc_info=True)
 
 app = FastAPI(
     title="Stock Prediction API",
@@ -176,45 +157,33 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# Mount static files
-# Ensure STATIC_DIR is correctly defined (it is, at the top now)
 if STATIC_DIR.exists() and STATIC_DIR.is_dir():
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 else:
-    logger.warning(f"Static directory {STATIC_DIR} not found. Static files will not be served.")
+    logger.warning(f"Static directory {STATIC_DIR} not found.")
 
-# Cấu hình Jinja2
-# Ensure TEMPLATES_DIR is correctly defined (it is, at the top now)
 if TEMPLATES_DIR.exists() and TEMPLATES_DIR.is_dir():
     templates = Jinja2Templates(directory=TEMPLATES_DIR)
 else:
-    logger.error(f"Templates directory {TEMPLATES_DIR} not found. HTML responses will fail.")
-    templates = None # Prevent further errors if templates are used when dir is missing
+    logger.error(f"Templates directory {TEMPLATES_DIR} not found.")
+    templates = None
 
 
 # --- API Endpoints ---
 
 @app.get("/predictions/latest_for_table")
 async def get_latest_predictions_for_table_from_db():
-    if not DB_CONFIG:
-        logger.error("API call to /predictions/latest_for_table failed: DB_CONFIG not loaded.")
-        raise HTTPException(status_code=500, detail="Database configuration error.")
-    
+    if not DB_CONFIG: raise HTTPException(status_code=500, detail="DB config error.")
     try:
         predictions = get_latest_prediction_for_all_tickers(DB_CONFIG)
-        if not predictions:
-            logger.info("No latest predictions found in the database for the table.")
-            return {"status": "success", "data": []} 
-        return {"status": "success", "data": predictions}
+        return {"status": "success", "data": predictions or []}
     except Exception as e:
         logger.error(f"API Error fetching latest predictions from DB: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error fetching latest predictions: {str(e)}")
 
 @app.get("/tickers")
 async def get_available_tickers():
-    if not DB_CONFIG:
-        logger.error("API call to /tickers failed: DB_CONFIG not loaded.")
-        raise HTTPException(status_code=500, detail="Database configuration error.")
+    if not DB_CONFIG: raise HTTPException(status_code=500, detail="DB config error.")
     try:
         tickers = get_all_distinct_tickers_from_predictions(DB_CONFIG)
         return {"status": "success", "tickers": tickers}
@@ -222,88 +191,83 @@ async def get_available_tickers():
         logger.error(f"API Error fetching distinct tickers: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error fetching tickers: {str(e)}")
 
-@app.get("/chart_data/{ticker}")
-async def get_chart_data(ticker: str):
+# --- NEW ENDPOINT FOR HISTORICAL CONTEXT CHART ---
+@app.get("/historical_context_chart/{ticker}")
+async def get_historical_context_for_prediction(ticker: str):
     if not DB_CONFIG:
-        logger.error(f"API call to /chart_data/{ticker} failed: DB_CONFIG not loaded.")
         raise HTTPException(status_code=500, detail="Database configuration error.")
 
-    ticker_upper = ticker.upper() # Use a different variable name
-    end_date = date.today()
-    start_date_actuals = end_date - timedelta(days=45) 
-    start_date_preds = end_date - timedelta(days=30)
+    ticker_upper = ticker.upper()
 
-    actual_prices_df = pd.DataFrame()
-    try:
-        stock_data = yf.Ticker(ticker_upper).history(start=start_date_actuals, end=end_date + timedelta(days=1))
-        if not stock_data.empty:
-            actual_prices_df = stock_data[['Close']].copy()
-            actual_prices_df.index = actual_prices_df.index.normalize().tz_localize(None)
-            actual_prices_df.rename(columns={'Close': 'actual_price'}, inplace=True)
-            actual_prices_df = actual_prices_df.reset_index().rename(columns={'Date': 'date', 'index':'date'})
-            actual_prices_df['date_str'] = actual_prices_df['date'].dt.strftime('%Y-%m-%d')
-    except Exception as e:
-        logger.error(f"Error fetching yfinance data for {ticker_upper} in /chart_data: {e}")
+    # 1. Get the latest target_prediction_date for this ticker from our DB
+    latest_pred_info = get_latest_target_date_prediction_for_ticker(DB_CONFIG, ticker_upper)
 
-    predicted_prices_df = get_predictions_for_ticker_in_daterange(
-        DB_CONFIG, ticker_upper, start_date_preds.isoformat(), end_date.isoformat()
-    )
-    if not predicted_prices_df.empty:
-        # Ensure column names match after potential rename in db_utils or here
-        # Assuming get_predictions_for_ticker_in_daterange returns 'target_prediction_date' and 'predicted_price'
-        predicted_prices_df.rename(columns={'target_prediction_date': 'date', 'predicted_price': 'predicted_price'}, inplace=True, errors='ignore')
-        predicted_prices_df['date'] = pd.to_datetime(predicted_prices_df['date'])
-        predicted_prices_df['date_str'] = predicted_prices_df['date'].dt.strftime('%Y-%m-%d')
-
-
-    last_30_days_range = pd.date_range(start=start_date_preds, end=end_date, freq='D')
-    chart_df = pd.DataFrame(last_30_days_range, columns=['date'])
-    chart_df['date_str'] = chart_df['date'].dt.strftime('%Y-%m-%d')
-
-    if not actual_prices_df.empty:
-        chart_df = pd.merge(chart_df, actual_prices_df[['date_str', 'actual_price']], on='date_str', how='left')
-    else:
-        chart_df['actual_price'] = pd.NA # Use pandas NA for proper handling of missing numeric
-
-    if not predicted_prices_df.empty:
-        chart_df = pd.merge(chart_df, predicted_prices_df[['date_str', 'predicted_price']], on='date_str', how='left')
-    else:
-        chart_df['predicted_price'] = pd.NA
-
-    chart_df = chart_df.sort_values(by='date').reset_index(drop=True)
-    
-    # Convert to float or None for JSON. pd.NA might not serialize well directly with FastAPI's default JSON encoder.
-    # Or ensure FastAPI/Pydantic handles pd.NA correctly. For simplicity:
-    chart_df['actual_price'] = chart_df['actual_price'].apply(lambda x: float(x) if pd.notna(x) else None)
-    chart_df['predicted_price'] = chart_df['predicted_price'].apply(lambda x: float(x) if pd.notna(x) else None)
-
-
-    # Check if there's any data to plot at all
-    if chart_df['actual_price'].isnull().all() and chart_df['predicted_price'].isnull().all():
-         logger.warning(f"No chartable data (actual or predicted) found for ticker: {ticker_upper} in the date range.")
-         # Return success with empty data so frontend can handle it.
-         return {
-            "status": "success", # Still a successful API call, just no data
+    if not latest_pred_info:
+        # If no prediction exists for this ticker, we can't determine the context window.
+        # Alternatively, could default to showing last 30 days of actuals if no prediction.
+        # For now, require a prediction to define the context.
+        logger.warning(f"No prediction found in DB for ticker {ticker_upper} to define historical context.")
+        # Return empty arrays so frontend can handle it gracefully
+        return {
+            "status": "success", # Still a successful API call
             "ticker": ticker_upper,
             "dates": [],
-            "actual_prices": [],
-            "predicted_prices": []
+            "actual_prices": []
         }
-        # Or raise HTTPException if preferred:
-        # raise HTTPException(status_code=404, detail=f"No chartable historical or predicted data found for ticker: {ticker_upper}")
+        # Or: raise HTTPException(status_code=404, detail=f"No prediction found for {ticker_upper} to base context on.")
 
+
+    latest_target_prediction_date_obj = date.fromisoformat(latest_pred_info["target_prediction_date"])
+
+    # 2. Define historical window: 30 trading days ending on the day *before* the prediction date.
+    # Fetch a bit more (e.g., 45-50 calendar days) to account for non-trading days.
+    history_end_date = latest_target_prediction_date_obj - timedelta(days=1)
+    history_start_date = history_end_date - timedelta(days=50) # Fetch ~50 calendar days back
+
+    actual_prices_list = []
+    actual_dates_list = []
+
+    try:
+        logger.info(f"Fetching yfinance history for {ticker_upper} from {history_start_date} to {history_end_date}")
+        stock_data_hist = yf.Ticker(ticker_upper).history(
+            start=history_start_date, 
+            end=history_end_date + timedelta(days=1) # yf 'end' is exclusive
+        )
+        
+        if not stock_data_hist.empty:
+            # Ensure we take the most recent data points if more than 30 trading days were fetched
+            df_hist = stock_data_hist[['Close']].tail(30).copy() # Get last 30 available records in the window
+            df_hist.index = df_hist.index.normalize().tz_localize(None) # Date only, no timezone
+            
+            for idx_date, row in df_hist.iterrows():
+                actual_dates_list.append(idx_date.strftime('%Y-%m-%d'))
+                actual_prices_list.append(row['Close'] if pd.notnull(row['Close']) else None)
+        else:
+            logger.warning(f"No yfinance historical data found for {ticker_upper} in range {history_start_date} to {history_end_date}")
+
+    except Exception as e:
+        logger.error(f"Error fetching yfinance data for {ticker_upper} in /historical_context_chart: {e}", exc_info=True)
+        # Continue even if yfinance fails, will return empty actuals list
+
+    # Sanitize for JSON (though yfinance usually returns clean floats or NaN)
+    # Using a helper for this is good practice if complex data types could appear
+    sanitized_actual_prices = []
+    for price in actual_prices_list:
+        if price is None or np.isnan(price) or np.isinf(price):
+            sanitized_actual_prices.append(None)
+        else:
+            sanitized_actual_prices.append(float(price))
 
     return {
         "status": "success",
         "ticker": ticker_upper,
-        "dates": chart_df['date_str'].tolist(),
-        "actual_prices": chart_df['actual_price'].tolist(),
-        "predicted_prices": chart_df['predicted_price'].tolist()
+        "dates": actual_dates_list,                 # Dates for historical actuals
+        "actual_prices": sanitized_actual_prices,   # Historical actual prices
+        "prediction_reference_date": latest_pred_info["target_prediction_date"] # Include for context on UI
     }
 
 @app.get("/", response_class=HTMLResponse)
 async def get_dashboard(request: Request):
     if not templates:
-        logger.error("Templates not initialized. Dashboard cannot be served.")
         raise HTTPException(status_code=500, detail="Server configuration error: Templates not found.")
     return templates.TemplateResponse("index.html", {"request": request})

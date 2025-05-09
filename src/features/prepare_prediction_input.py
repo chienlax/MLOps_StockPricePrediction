@@ -80,14 +80,13 @@ def run_prepare_input(config_path: str,
             logger.error("Mismatch in dimensions of loaded scalers_x vs feature_columns/tickers.")
             logger.error(f"Num stocks from tickers: {num_stocks_prod_model}, Num stocks in scalers_x: {len(scalers_x)}")
             if num_stocks_prod_model > 0:
-                 logger.error(f"Num features from columns: {num_features_prod_model}, Num features in scalers_x[0]: {len(scalers_x[0]) if scalers_x else 'N/A'}")
+                logger.error(f"Num features from columns: {num_features_prod_model}, Num features in scalers_x[0]: {len(scalers_x[0]) if scalers_x else 'N/A'}")
             return None
-
 
         # 2. Fetch latest raw data window
         # Buffer for TA indicators (e.g., if max window for an indicator is 50, need 50 prior points)
-        # This should ideally be configurable or derived from feature_engineering params.
-        raw_data_lookback_days = sequence_length + 60 # Heuristic buffer
+        MAX_TA_WINDOW_REQUIRED = 200 # Example: Assuming EMA_200 is your longest
+        raw_data_lookback_days = sequence_length + MAX_TA_WINDOW_REQUIRED + 15 # +15 for buffer
         logger.info(f"Fetching latest {raw_data_lookback_days} days of raw data for tickers: {tickers_prod_model}...")
         latest_raw_data_dict = get_latest_raw_data_window(db_config, tickers_prod_model, raw_data_lookback_days)
 
@@ -133,6 +132,7 @@ def run_prepare_input(config_path: str,
             if missing_cols:
                 logger.error(f"Ticker {ticker}: Missing expected feature columns after TA: {missing_cols}")
                 return None
+            df_filled = df_filled.fillna(0) # Fill any remaining NaNs with 0
             data_preprocessed_for_pred[ticker] = df_filled[feature_columns_prod_model] # Select only relevant features
 
         # 5. Align data across tickers for the feature columns

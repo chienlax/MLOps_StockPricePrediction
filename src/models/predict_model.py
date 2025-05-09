@@ -612,16 +612,45 @@ def run_daily_prediction(
 
         # 5. Make predictions
         logger.info("Making predictions...")
+        logger.info(f"Shape of input_tensor to model: {input_tensor.shape}")
+        # --- ADD LOGGING: Check if input_tensor has NaNs ---
+        if torch.isnan(input_tensor).any():
+            logger.warning(f"!!! Input tensor CONTAINS NaNs before model inference: {input_tensor}")
+        else:
+            logger.info(f"Input tensor does NOT contain NaNs. Min: {input_tensor.min()}, Max: {input_tensor.max()}")
+
         with torch.no_grad():
             predictions_scaled_tensor = model_pytorch(input_tensor)
+
+        # --- ADD LOGGING: Check model's direct output tensor ---
+        if torch.isnan(predictions_scaled_tensor).any():
+            logger.warning(f"!!! Scaled prediction tensor from model CONTAINS NaNs: {predictions_scaled_tensor}")
+        else:
+            logger.info(f"Scaled prediction tensor from model does NOT contain NaNs. Min: {predictions_scaled_tensor.min()}, Max: {predictions_scaled_tensor.max()}")
+        logger.info(f"Shape of predictions_scaled_tensor: {predictions_scaled_tensor.shape}")
+        # --- END ADD LOGGING ---
+
         predictions_scaled_np = predictions_scaled_tensor.cpu().numpy()
         
+        if np.isnan(predictions_scaled_np).any():
+            logger.warning(f"!!! Scaled prediction numpy array CONTAINS NaNs: {predictions_scaled_np}")
+
         # 6. Inverse transform predictions
         logger.info("Inverse transforming predictions...")
         predicted_prices_final = {}
         for stock_idx, ticker_name in enumerate(tickers):
-            scaled_pred_value = predictions_scaled_np[0, 0, stock_idx] 
+            scaled_pred_value = predictions_scaled_np[0, 0, stock_idx]
+            
+            logger.info(f"Ticker: {ticker_name}, Scaled Predicted Value before inverse_transform: {scaled_pred_value}")
+            if np.isnan(scaled_pred_value):
+                logger.warning(f"!!! Scaled_pred_value for {ticker_name} is NaN BEFORE inverse transform.")
+
             actual_pred_price = y_scalers[stock_idx].inverse_transform(np.array([[scaled_pred_value]]))[0][0]
+
+            logger.info(f"Ticker: {ticker_name}, Actual Predicted Price after inverse_transform: {actual_pred_price}")
+            if np.isnan(actual_pred_price):
+                logger.warning(f"!!! Actual_pred_price for {ticker_name} is NaN AFTER inverse transform. Scaled input was: {scaled_pred_value}")
+
             predicted_prices_final[ticker_name] = float(actual_pred_price)
         logger.info(f"Final predicted prices: {predicted_prices_final}")
 

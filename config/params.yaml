@@ -10,12 +10,12 @@ feature_engineering:
   prediction_length: 1 # Currently only supporting 1-day ahead
 
 optimization:
-  n_trials: 10
-  epochs: 10
+  n_trials: 1
+  epochs: 3
   patience: 5
 
 training:
-  epochs: 20
+  epochs: 3
 
 database:
   dbname: 'airflow'

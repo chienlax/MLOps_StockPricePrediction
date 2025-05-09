@@ -151,194 +151,120 @@
 // }
 
 // templates/static/js/app.js
-let historicalChart; 
+let historicalContextChart; // Renamed chart variable
 
 document.addEventListener("DOMContentLoaded", () => {
-    loadLatestPredictionsForTable(); // For the table view
-    loadTickersForDropdown();      // For populating the dropdown
+    loadLatestPredictionsForTable(); 
+    loadTickersForDropdown();      
 });
 
-// Function to load data for the "Latest Predictions" table
-function loadLatestPredictionsForTable() {
-    fetch("/predictions/latest_for_table") // Still uses this endpoint name
-        .then(response => {
-            if (!response.ok) throw new Error(`HTTP error! status: ${response.status} for latest_for_table`);
-            return response.json();
-        })
-        .then(data => {
-            if (data.status !== "success") throw new Error("Failed to load latest predictions for table from DB");
-            populateLatestPredictionsTable(data.data);
-        })
-        .catch(error => {
-            console.error("Error loading latest predictions for table:", error);
-            const tbody = document.querySelector("#latest-predictions-table tbody");
-            if (tbody) tbody.innerHTML = `<tr><td colspan="3">Error: ${error.message}</td></tr>`;
-        });
-}
-
-// NEW function to load all distinct tickers for the dropdown
-function loadTickersForDropdown() {
-    fetch("/tickers") // New endpoint
-        .then(response => {
-            if (!response.ok) throw new Error(`HTTP error! status: ${response.status} for /tickers`);
-            return response.json();
-        })
-        .then(data => {
-            if (data.status !== "success" || !data.tickers) throw new Error("Failed to load tickers for dropdown");
-            populateTickerDropdown(data.tickers);
-            // Optionally, auto-load chart for the first ticker if list is not empty
-            if (data.tickers && data.tickers.length > 0) {
-                document.getElementById("ticker-select").value = data.tickers[0];
-                updateChart(); // This will now call /chart_data/{ticker}
-            }
-        })
-        .catch(error => {
-            console.error("Error loading tickers for dropdown:", error);
-            const select = document.getElementById("ticker-select");
-            if (select) {
-                select.innerHTML = "<option>Error loading tickers</option>";
-            }
-        });
-}
-
-
-function populateLatestPredictionsTable(predictions) {
-    const tbody = document.querySelector("#latest-predictions-table tbody");
-    if (!tbody) return;
-    tbody.innerHTML = ""; 
-    if (!predictions || predictions.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="3">No latest predictions available from database.</td></tr>`;
-        return;
-    }
-    predictions.forEach(p => {
-        const row = document.createElement("tr");
-        // Ensure 'date' and 'predicted_price' keys match what get_latest_prediction_for_all_tickers returns
-        row.innerHTML = `
-            <td>${p.ticker}</td>
-            <td>$${p.predicted_price ? parseFloat(p.predicted_price).toFixed(2) : 'N/A'}</td>
-            <td>${p.date}</td> 
-        `;
-        tbody.appendChild(row);
-    });
-}
-
-// MODIFIED to take a simple array of ticker strings
-function populateTickerDropdown(tickers) {
-    const select = document.getElementById("ticker-select");
-    if (!select) return;
-    select.innerHTML = ""; 
-
-    if (!tickers || tickers.length === 0) {
-        const option = document.createElement("option");
-        option.textContent = "No tickers available";
-        select.appendChild(option);
-        return;
-    }
-
-    tickers.sort().forEach(ticker => { // Sort tickers alphabetically
-        const option = document.createElement("option");
-        option.value = ticker;
-        option.textContent = ticker;
-        select.appendChild(option);
-    });
-}
-
-// updateChart and renderDualLineChart remain the same as in the previous version,
-// as they already call /chart_data/{ticker} which was designed to provide
-// both actual and predicted prices from the database.
+// loadLatestPredictionsForTable and populateLatestPredictionsTable remain the same
+// loadTickersForDropdown and populateTickerDropdown remain the same
 
 function updateChart() {
     const ticker = document.getElementById("ticker-select").value;
     if (!ticker || ticker === "No tickers available" || ticker === "Error loading tickers") {
-        if (historicalChart) {
-            historicalChart.destroy();
-            historicalChart = null;
-        }
+        if (historicalContextChart) { historicalContextChart.destroy(); historicalContextChart = null; }
         const chartCtx = document.getElementById("historical-chart").getContext("2d");
         chartCtx.clearRect(0,0, chartCtx.canvas.width, chartCtx.canvas.height);
-        // You could also write "Please select a ticker" on the canvas
         return;
     }
 
-    fetch(`/chart_data/${ticker}`)
+    // Call the new endpoint for historical context
+    fetch(`/historical_context_chart/${ticker}`) 
         .then(response => {
             if (!response.ok) {
-                return response.json().then(errData => {
-                    throw new Error(`HTTP error! status: ${response.status}. ${errData.detail || 'Failed to fetch chart data.'}`);
-                }).catch(() => {
-                     throw new Error(`HTTP error! status: ${response.status}. Failed to fetch chart data.`);
+                return response.json().then(errData => { // Try to get error detail
+                    throw new Error(`HTTP error! status: ${response.status}. ${errData.detail || 'Failed to fetch historical context data.'}`);
+                }).catch(() => { // Fallback if error detail parsing fails
+                     throw new Error(`HTTP error! status: ${response.status}. Failed to fetch historical context data.`);
                 });
             }
             return response.json();
         })
         .then(data => {
-            if (data.status !== "success") throw new Error(data.detail || "API returned non-success status for chart data");
+            if (data.status !== "success") throw new Error(data.detail || "API returned non-success for historical context");
             
-            if (data.dates.length === 0 && data.actual_prices.every(p => p === null) && data.predicted_prices.every(p => p === null) ) {
-                alert(`No chart data available for ${ticker}.`);
-                 if (historicalChart) {
-                    historicalChart.destroy();
-                    historicalChart = null;
-                 }
+            if (!data.dates || data.dates.length === 0) {
+                alert(`No historical context data available to chart for ${ticker}. This might happen if no prediction exists yet for this ticker.`);
+                 if (historicalContextChart) { historicalContextChart.destroy(); historicalContextChart = null; }
                 return;
             }
-            renderDualLineChart(data.ticker, data.dates, data.actual_prices, data.predicted_prices);
+            renderHistoricalContextChart(data); // Call new rendering function
         })
         .catch(error => {
-            console.error(`Error loading chart data for ${ticker}:`, error);
-            alert(`Error fetching chart data: ${error.message}`);
-            if (historicalChart) {
-                historicalChart.destroy();
-                historicalChart = null; 
-            }
+            console.error(`Error loading historical context data for ${ticker}:`, error);
+            alert(`Error fetching historical context data: ${error.message}`);
+            if (historicalContextChart) { historicalContextChart.destroy(); historicalContextChart = null; }
         });
 }
 
-function renderDualLineChart(ticker, dates, actualPrices, predictedPrices) {
-    const ctx = document.getElementById("historical-chart").getContext("2d");
+// NEW chart rendering function for historical context
+function renderHistoricalContextChart(data) {
+    const { 
+        ticker, 
+        dates, // These are historical_dates from API
+        actual_prices, // These are historical_actual_prices from API
+        prediction_reference_date // The date the prediction (in the table) is for
+    } = data;
 
-    if (historicalChart) {
-        historicalChart.destroy(); 
+    const canvas = document.getElementById("historical-chart");
+    const ctx = canvas.getContext("2d");
+
+    if (historicalContextChart) {
+        historicalContextChart.destroy();
+        historicalContextChart = null;
     }
 
-    historicalChart = new Chart(ctx, {
+    // If no actual historical prices were found, display a message or empty chart
+    if (!actual_prices || actual_prices.length === 0) {
+        console.warn(`No actual historical prices received for ${ticker} to plot context chart.`);
+        // Optionally clear canvas or show a "No historical data" message within the canvas
+        ctx.clearRect(0,0, canvas.width, canvas.height); // Clear previous
+        ctx.font = "16px Arial";
+        ctx.textAlign = "center";
+        ctx.fillText(`No historical price data found for ${ticker} to display context.`, canvas.width/2, canvas.height/2);
+        return;
+    }
+    
+    historicalContextChart = new Chart(ctx, {
         type: "line",
         data: {
-            labels: dates,
+            labels: dates, // Dates corresponding to historical_actual_prices
             datasets: [
                 {
-                    label: `Actual Price for ${ticker}`,
-                    data: actualPrices,
-                    borderColor: "rgba(54, 162, 235, 1)", 
-                    backgroundColor: "rgba(54, 162, 235, 0.5)",
+                    label: `Actual Price History for ${ticker} (Context for prediction on ${prediction_reference_date})`,
+                    data: actual_prices, 
+                    borderColor: "rgba(54, 162, 235, 1)", // Blue
                     borderWidth: 2,
                     fill: false,
                     tension: 0.1,
                     pointRadius: 2,
                     pointHoverRadius: 5,
-                    spanGaps: true, 
-                },
-                {
-                    label: `Predicted Price for ${ticker}`,
-                    data: predictedPrices,
-                    borderColor: "rgba(255, 99, 132, 1)", 
-                    backgroundColor: "rgba(255, 99, 132, 0.5)",
-                    borderWidth: 2,
-                    fill: false,
-                    tension: 0.1,
-                    pointRadius: 2,
-                    pointHoverRadius: 5,
-                    spanGaps: true, 
+                    spanGaps: false, // Or true, depending on how you want to handle missing actuals within the history
                 }
             ]
         },
-        options: { // Your existing chart options are good
+        options: {
             responsive: true,
             maintainAspectRatio: false,
-            plugins: { tooltip: { mode: 'index', intersect: false,}, legend: {display: true, position: 'top',}},
+            plugins: {
+                title: {
+                    display: true,
+                    text: `30-Day Price History for ${ticker} (Leading up to prediction for ${prediction_reference_date})`
+                },
+                tooltip: { mode: 'index', intersect: false },
+                legend: { display: true, position: 'top' }
+            },
             scales: {
-                x: { title: {display: true, text: "Date"}, ticks: {maxRotation: 45, minRotation: 45, autoSkip: true, maxTicksLimit: 15 }},
-                y: { title: {display: true, text: "Price ($)"}, beginAtZero: false }
+                x: { 
+                    title: { display: true, text: "Date" },
+                    ticks: { maxRotation: 45, minRotation: 45, autoSkip: true, maxTicksLimit: 15 } // Adjusted for ~30 data points
+                },
+                y: { 
+                    title: { display: true, text: "Actual Price ($)" }, 
+                    beginAtZero: false 
+                }
             }
         }
     });
