@@ -31,13 +31,23 @@ monitoring:
   evaluation_lag_days: 1 # How many days to wait for actuals (e.g., T+1 for stock prices)
 
 airflow_dags:
-  daily_operations_dag_id: "daily_stock_operations"
-  retraining_pipeline_dag_id: "stock_model_retraining_pipeline"
-  # daily_operations_dag_id: "daily_stock_operations_prod" # Example name
-  # retraining_pipeline_dag_id: "stock_model_retraining_prod" # Example name
-  retraining_trigger_task_id: "trigger_retraining_pipeline_task"
-  no_retraining_task_id: "no_retraining_needed_task"
+  daily_operations_dag_id: "daily_stock_operations_prod"
+  retraining_pipeline_dag_id: "stock_model_retraining_prod"
+  # Task IDs for branching in daily_ops_dag
+  retraining_trigger_task_id: "trigger_retraining_pipeline_task" # Used by BranchOp AND TriggerDagRunOp
+  no_retraining_task_id: "no_retraining_needed_task"      # Used by BranchOp AND DummyOp
+  # Task IDs for branching in retraining_dag
+  promotion_task_id: "promote_candidate_to_production_task" # Used by BranchOp AND PythonOp for promotion
+  no_promotion_task_id: "do_not_promote_task"                 # Used by BranchOp AND DummyOp
 
+alert_email: 'your_actual_email@example.com' # For Airflow alerts
+
+schedules:
+  daily_dag: '0 2 * * 1-5' # Example: 2 AM UTC Mon-Fri
+
+model_promotion: # For retraining DAG's evaluation
+  metric: "final_avg_mape_test" # Metric from train_model.py's eval output to compare
+  higher_is_better: False      # For MAPE, lower is better
 
 output_paths:
   raw_data_template: "/opt/airflow/data/raw/{ticker}_raw.pkl"
