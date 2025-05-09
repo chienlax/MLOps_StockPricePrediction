@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 from datetime import datetime, timedelta, date
+from decimal import Decimal
 from typing import Optional, List, Dict
 from typing import Any
 
@@ -774,13 +775,9 @@ def get_latest_prediction_for_all_tickers(db_config: dict) -> list[dict]:
                 cursor.close()
             conn.close()
 
-# ------------------------------------------------------------
-
 def get_latest_target_date_prediction_for_ticker(db_config: dict, ticker: str) -> Optional[dict]:
-    """
-    Retrieves the most recent prediction (latest target_prediction_date)
-    for a single specified ticker.
-    """
+    conn = None
+    cursor = None
     try:
         conn = get_db_connection(db_config)
         cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
@@ -796,22 +793,111 @@ def get_latest_target_date_prediction_for_ticker(db_config: dict, ticker: str) -
         result = cursor.fetchone()
         
         if result:
+            # Log exactly what is being fetched
+            logger.info(f"DB_UTILS: Fetched for {ticker}: target_date={result['target_prediction_date']}, raw_predicted_price={result['predicted_price']} (type: {type(result['predicted_price'])})")
+
+            predicted_price_val = result["predicted_price"]
+            final_predicted_price = None
+            if predicted_price_val is not None:
+                if isinstance(predicted_price_val, Decimal):
+                    final_predicted_price = float(predicted_price_val)
+                elif isinstance(predicted_price_val, (float, int)):
+                    final_predicted_price = float(predicted_price_val)
+                else:
+                    try:
+                        final_predicted_price = float(predicted_price_val)
+                        logger.warning(f"DB_UTILS: predicted_price for {ticker} was type {type(predicted_price_val)}, successfully cast to float.")
+                    except (ValueError, TypeError):
+                        logger.error(f"DB_UTILS: Could not convert predicted_price '{predicted_price_val}' (type: {type(predicted_price_val)}) to float for {ticker}. Setting to None.")
+                        final_predicted_price = None
+            
             return {
                 "target_prediction_date": result["target_prediction_date"].isoformat() if isinstance(result["target_prediction_date"], date) else str(result["target_prediction_date"]),
-                "predicted_price": result["predicted_price"],
+                "predicted_price": final_predicted_price, # Use the processed value
                 "model_mlflow_run_id": result["model_mlflow_run_id"]
             }
         else:
+            logger.info(f"DB_UTILS: No prediction found for {ticker}.")
             return None
-            
     except Exception as e:
-        logger.error(f"Error getting latest target date prediction for {ticker} from DB: {e}", exc_info=True)
+        logger.error(f"DB_UTILS: Error in get_latest_target_date_prediction_for_ticker for {ticker}: {e}", exc_info=True)
         return None
     finally:
-        if 'conn' in locals() and conn:
-            if 'cursor' in locals() and cursor:
-                cursor.close()
+        if cursor:
+            cursor.close()
+        if conn:
             conn.close()
+
+def get_raw_stock_data_for_period(db_config: dict, ticker: str, end_date_obj: date, num_days: int) -> pd.DataFrame:
+    """
+    Retrieves raw stock data (date, close) for a ticker for a specified number of trading days
+    ending on or before the end_date_obj from the raw_stock_data table.
+    """
+    conn = None
+    try:
+        conn = get_db_connection(db_config)
+        query = """
+            SELECT date, close
+            FROM raw_stock_data
+            WHERE ticker = %s AND date <= %s
+            ORDER BY date DESC
+            LIMIT %s;
+        """
+        df = pd.read_sql_query(query, conn, params=(ticker.upper(), end_date_obj, num_days))
+        
+        if not df.empty:
+            df['date'] = pd.to_datetime(df['date']) # Ensure date is datetime
+            df = df.sort_values(by='date', ascending=True).reset_index(drop=True) # Chronological
+            logger.info(f"Fetched {len(df)} raw_stock_data points for {ticker} ending on/before {end_date_obj} for chart.")
+        else:
+            logger.warning(f"No raw_stock_data found for {ticker} for chart period ending {end_date_obj}.")
+        return df
+
+    except Exception as e:
+        logger.error(f"Error fetching raw stock data for {ticker} for chart: {e}", exc_info=True)
+        return pd.DataFrame()
+    finally:
+        if conn:
+            conn.close()
+
+# ------------------------------------------------------------
+
+# def get_latest_target_date_prediction_for_ticker(db_config: dict, ticker: str) -> Optional[dict]:
+#     """
+#     Retrieves the most recent prediction (latest target_prediction_date)
+#     for a single specified ticker.
+#     """
+#     try:
+#         conn = get_db_connection(db_config)
+#         cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        
+#         query = """
+#             SELECT target_prediction_date, predicted_price, model_mlflow_run_id
+#             FROM latest_predictions
+#             WHERE ticker = %s
+#             ORDER BY target_prediction_date DESC
+#             LIMIT 1;
+#         """
+#         cursor.execute(query, (ticker.upper(),))
+#         result = cursor.fetchone()
+        
+#         if result:
+#             return {
+#                 "target_prediction_date": result["target_prediction_date"].isoformat() if isinstance(result["target_prediction_date"], date) else str(result["target_prediction_date"]),
+#                 "predicted_price": result["predicted_price"],
+#                 "model_mlflow_run_id": result["model_mlflow_run_id"]
+#             }
+#         else:
+#             return None
+            
+#     except Exception as e:
+#         logger.error(f"Error getting latest target date prediction for {ticker} from DB: {e}", exc_info=True)
+#         return None
+#     finally:
+#         if 'conn' in locals() and conn:
+#             if 'cursor' in locals() and cursor:
+#                 cursor.close()
+#             conn.close()
 
 # ------------------------------------------------------------
 

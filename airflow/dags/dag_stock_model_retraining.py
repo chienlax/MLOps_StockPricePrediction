@@ -52,6 +52,8 @@ def callable_initialize_database_for_retrain(**kwargs):
     setup_database(config['database'])
     return "DB Initialized for Retraining DAG"
 
+# -----------------------------------------------------------------------------------
+
 def callable_run_make_dataset_full_retrain(**kwargs): # Renamed
     ti = kwargs['ti']
     script_path = str(MAKE_DATASET_SCRIPT)
@@ -71,6 +73,8 @@ def callable_run_make_dataset_full_retrain(**kwargs): # Renamed
     ti.xcom_push(key='new_dataset_run_id', value=new_dataset_run_id) # Key for XCom
     log.info(f"Retraining DAG: New dataset_run_id: {new_dataset_run_id}")
     return new_dataset_run_id
+
+# -----------------------------------------------------------------------------------
 
 def callable_train_candidate_and_get_ids(**kwargs): # Renamed
     ti = kwargs['ti']
@@ -105,6 +109,8 @@ def callable_train_candidate_and_get_ids(**kwargs): # Renamed
     ti.xcom_push(key='candidate_model_mlflow_run_id', value=candidate_model_mlflow_run_id)
     ti.xcom_push(key='candidate_training_dataset_run_id', value=new_dataset_run_id) # For evaluation context
     return candidate_model_mlflow_run_id
+
+# -----------------------------------------------------------------------------------
 
 def callable_evaluate_and_branch_promotion(**kwargs): # Renamed
     ti = kwargs['ti']

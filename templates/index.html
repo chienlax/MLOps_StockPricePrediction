@@ -4,47 +4,49 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Stock Prediction Dashboard</title>
-    <!-- Load Chart.js từ CDN -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <!-- Load CSS -->
     <link rel="stylesheet" href="/static/css/styles.css">
+    <link rel="icon" href="/static/favicon.ico" type="image/x-icon">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
 </head>
 <body>
     <div class="container">
         <h1>Stock Prediction Dashboard</h1>
 
-        <!-- Phần hiển thị dự đoán mới nhất -->
-        <section>
-            <h2>Latest Predictions</h2>
-            <table id="latest-predictions-table">
+        <div class="controls">
+            <label for="tickerSelector">Select Ticker:</label>
+            <select id="tickerSelector"></select>
+        </div>
+
+        <div class="selected-prediction-container">
+            <h2>Next Day Prediction</h2>
+            <p id="selectedTickerName">Ticker: N/A</p>
+            <p id="selectedTickerPredictionDate">Prediction for Date: N/A</p>
+            <p id="selectedTickerPredictedPrice">Predicted Price: N/A</p>
+            <p id="selectedTickerPredictionError" class="error-message" style="display:none;"></p>
+        </div>
+
+        <div class="chart-container" style="position: relative; width: 90%; max-width: 800px; margin: 30px auto; height: 400px;">
+            <canvas id="stockPriceChart"></canvas>
+        </div>
+
+        <div class="table-container">
+            <h2>Latest Predictions (All Tickers Overview)</h2>
+            <table id="predictionsTable">
                 <thead>
                     <tr>
                         <th>Ticker</th>
                         <th>Predicted Price</th>
-                        <th>Date</th>
+                        <th>Prediction Target Date</th>
+                        <th>Model MLflow Run ID</th>
                     </tr>
                 </thead>
                 <tbody>
-                    <!-- Dữ liệu sẽ được điền bằng JavaScript -->
+                    <!-- Data will be populated by JavaScript -->
                 </tbody>
             </table>
-        </section>
-
-        <!-- Phần hiển thị biểu đồ lịch sử -->
-        <section>
-            <h2>Historical Predictions</h2>
-            <div class="chart-controls">
-                <label for="ticker-select">Select Ticker:</label>
-                <select id="ticker-select">
-                    <!-- Các ticker sẽ được điền bằng JavaScript -->
-                </select>
-                <button onclick="updateChart()">Update Chart</button>
-            </div>
-            <canvas id="historical-chart" width="400" height="200"></canvas>
-        </section>
+        </div>
     </div>
-
-    <!-- Load JavaScript -->
     <script src="/static/js/app.js"></script>
 </body>
 </html>

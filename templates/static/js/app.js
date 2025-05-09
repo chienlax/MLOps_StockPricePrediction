@@ -1,271 +1,205 @@
-// let historicalChart;
-
-// // Tải dữ liệu khi trang sẵn sàng
-// document.addEventListener("DOMContentLoaded", () => {
-//     loadLatestPredictions();
-// });
-
-// // ------------------ TẢI DỮ LIỆU MỚI NHẤT ------------------
-
-// function loadLatestPredictions() {
-//     fetch("/predictions/latest")
-//         .then(response => {
-//             if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-//             return response.json();
-//         })
-//         .then(data => {
-//             if (data.status !== "success") throw new Error("Failed to load latest predictions");
-//             const predictions = data.data;
-//             populateLatestPredictionsTable(predictions);
-//             populateTickerDropdown(predictions);
-//         })
-//         .catch(error => {
-//             console.error("Error loading latest predictions:", error);
-//             const tbody = document.querySelector("#latest-predictions-table tbody");
-//             tbody.innerHTML = `<tr><td colspan="3">Error: ${error.message}</td></tr>`;
-//         });
-// }
-
-// // ------------------ BẢNG MỚI NHẤT ------------------
-
-// function populateLatestPredictionsTable(predictions) {
-//     const tbody = document.querySelector("#latest-predictions-table tbody");
-//     tbody.innerHTML = "";
-//     predictions.forEach(p => {
-//         const row = document.createElement("tr");
-//         row.innerHTML = `
-//             <td>${p.ticker}</td>
-//             <td>$${p.predicted_price.toFixed(2)}</td>
-//             <td>${p.date}</td>
-//         `;
-//         tbody.appendChild(row);
-//     });
-// }
-
-// // ------------------ DROPDOWN CHỌN TICKER ------------------
-
-// function populateTickerDropdown(predictions) {
-//     const select = document.getElementById("ticker-select");
-//     select.innerHTML = "";
-//     const tickers = [...new Set(predictions.map(p => p.ticker))];
-//     tickers.forEach(ticker => {
-//         const option = document.createElement("option");
-//         option.value = ticker;
-//         option.textContent = ticker;
-//         select.appendChild(option);
-//     });
-// }
-
-// // ------------------ CẬP NHẬT BIỂU ĐỒ ------------------
-
-// function updateChart() {
-//     const ticker = document.getElementById("ticker-select").value;
-//     if (!ticker) {
-//         alert("Please select a ticker");
-//         return;
-//     }
-
-//     fetch(`/predictions/historical/${ticker}`)
-//         .then(response => {
-//             if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-//             return response.json();
-//         })
-//         .then(data => {
-//             if (data.status !== "success") throw new Error("Failed to load historical predictions");
-//             const predictions = data.data;
-
-//             if (predictions.length === 0) {
-//                 alert(`No historical data available for ${ticker}`);
-//                 return;
-//             }
-
-//             // Sort theo ngày tăng dần
-//             predictions.sort((a, b) => new Date(a.date) - new Date(b.date));
-//             renderHistoricalChart(predictions);
-//         })
-//         .catch(error => {
-//             console.error("Error loading historical predictions:", error);
-//             alert(`Error: ${error.message}`);
-//         });
-// }
-
-// // ------------------ VẼ BIỂU ĐỒ ------------------
-
-// function renderHistoricalChart(predictions) {
-//     const ctx = document.getElementById("historical-chart").getContext("2d");
-
-//     if (historicalChart) {
-//         historicalChart.destroy();
-//     }
-
-//     const labels = predictions.map(p => p.date);
-//     const prices = predictions.map(p => p.predicted_price);
-
-//     historicalChart = new Chart(ctx, {
-//         type: "line",
-//         data: {
-//             labels: labels,
-//             datasets: [{
-//                 label: `Predicted Price for ${predictions[0].ticker}`,
-//                 data: prices,
-//                 borderColor: "rgba(75, 192, 192, 1)",
-//                 borderWidth: 2,
-//                 fill: false,
-//                 tension: 0.1,
-//                 pointRadius: 3,
-//                 pointHoverRadius: 6
-//             }]
-//         },
-//         options: {
-//             responsive: true,
-//             plugins: {
-//                 tooltip: {
-//                     mode: 'index',
-//                     intersect: false,
-//                 },
-//                 legend: {
-//                     display: true
-//                 }
-//             },
-//             scales: {
-//                 x: {
-//                     title: {
-//                         display: true,
-//                         text: "Date"
-//                     },
-//                     ticks: {
-//                         maxRotation: 45,
-//                         minRotation: 45
-//                     }
-//                 },
-//                 y: {
-//                     title: {
-//                         display: true,
-//                         text: "Predicted Price ($)"
-//                     },
-//                     beginAtZero: false
-//                 }
-//             }
-//         }
-//     });
-// }
-
-// templates/static/js/app.js
-let historicalContextChart; // Renamed chart variable
-
-document.addEventListener("DOMContentLoaded", () => {
-    loadLatestPredictionsForTable(); 
-    loadTickersForDropdown();      
-});
-
-// loadLatestPredictionsForTable and populateLatestPredictionsTable remain the same
-// loadTickersForDropdown and populateTickerDropdown remain the same
-
-function updateChart() {
-    const ticker = document.getElementById("ticker-select").value;
-    if (!ticker || ticker === "No tickers available" || ticker === "Error loading tickers") {
-        if (historicalContextChart) { historicalContextChart.destroy(); historicalContextChart = null; }
-        const chartCtx = document.getElementById("historical-chart").getContext("2d");
-        chartCtx.clearRect(0,0, chartCtx.canvas.width, chartCtx.canvas.height);
-        return;
-    }
-
-    // Call the new endpoint for historical context
-    fetch(`/historical_context_chart/${ticker}`) 
-        .then(response => {
-            if (!response.ok) {
-                return response.json().then(errData => { // Try to get error detail
-                    throw new Error(`HTTP error! status: ${response.status}. ${errData.detail || 'Failed to fetch historical context data.'}`);
-                }).catch(() => { // Fallback if error detail parsing fails
-                     throw new Error(`HTTP error! status: ${response.status}. Failed to fetch historical context data.`);
-                });
-            }
-            return response.json();
-        })
-        .then(data => {
-            if (data.status !== "success") throw new Error(data.detail || "API returned non-success for historical context");
-            
-            if (!data.dates || data.dates.length === 0) {
-                alert(`No historical context data available to chart for ${ticker}. This might happen if no prediction exists yet for this ticker.`);
-                 if (historicalContextChart) { historicalContextChart.destroy(); historicalContextChart = null; }
-                return;
-            }
-            renderHistoricalContextChart(data); // Call new rendering function
-        })
-        .catch(error => {
-            console.error(`Error loading historical context data for ${ticker}:`, error);
-            alert(`Error fetching historical context data: ${error.message}`);
-            if (historicalContextChart) { historicalContextChart.destroy(); historicalContextChart = null; }
-        });
-}
-
-// NEW chart rendering function for historical context
-function renderHistoricalContextChart(data) {
-    const { 
-        ticker, 
-        dates, // These are historical_dates from API
-        actual_prices, // These are historical_actual_prices from API
-        prediction_reference_date // The date the prediction (in the table) is for
-    } = data;
-
-    const canvas = document.getElementById("historical-chart");
-    const ctx = canvas.getContext("2d");
-
-    if (historicalContextChart) {
-        historicalContextChart.destroy();
-        historicalContextChart = null;
-    }
-
-    // If no actual historical prices were found, display a message or empty chart
-    if (!actual_prices || actual_prices.length === 0) {
-        console.warn(`No actual historical prices received for ${ticker} to plot context chart.`);
-        // Optionally clear canvas or show a "No historical data" message within the canvas
-        ctx.clearRect(0,0, canvas.width, canvas.height); // Clear previous
-        ctx.font = "16px Arial";
-        ctx.textAlign = "center";
-        ctx.fillText(`No historical price data found for ${ticker} to display context.`, canvas.width/2, canvas.height/2);
-        return;
-    }
+document.addEventListener('DOMContentLoaded', function() {
+    const tickerSelector = document.getElementById('tickerSelector');
+    const predictionsTableBody = document.querySelector('#predictionsTable tbody');
     
-    historicalContextChart = new Chart(ctx, {
-        type: "line",
-        data: {
-            labels: dates, // Dates corresponding to historical_actual_prices
-            datasets: [
-                {
-                    label: `Actual Price History for ${ticker} (Context for prediction on ${prediction_reference_date})`,
-                    data: actual_prices, 
-                    borderColor: "rgba(54, 162, 235, 1)", // Blue
-                    borderWidth: 2,
-                    fill: false,
-                    tension: 0.1,
-                    pointRadius: 2,
-                    pointHoverRadius: 5,
-                    spanGaps: false, // Or true, depending on how you want to handle missing actuals within the history
+    const selectedTickerNameElement = document.getElementById('selectedTickerName');
+    const selectedTickerPredictionDateElement = document.getElementById('selectedTickerPredictionDate');
+    const selectedTickerPredictedPriceElement = document.getElementById('selectedTickerPredictedPrice');
+    const selectedTickerPredictionErrorElement = document.getElementById('selectedTickerPredictionError');
+    const chartCanvas = document.getElementById('stockPriceChart');
+
+    let stockChart = null;
+
+    async function fetchTickers() {
+        try {
+            const response = await fetch('/tickers');
+            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+            const data = await response.json();
+            if (data.status === 'success' && data.tickers) {
+                populateTickerSelector(data.tickers);
+            } else {
+                console.error('Failed to load tickers:', data);
+                selectedTickerPredictionErrorElement.textContent = 'Failed to load ticker list.';
+                selectedTickerPredictionErrorElement.style.display = 'block';
+                if (chartCanvas) chartCanvas.style.display = 'none';
+            }
+        } catch (error) {
+            console.error('Error fetching tickers:', error);
+            selectedTickerPredictionErrorElement.textContent = 'Error fetching ticker list.';
+            selectedTickerPredictionErrorElement.style.display = 'block';
+            if (chartCanvas) chartCanvas.style.display = 'none';
+        }
+    }
+
+    function populateTickerSelector(tickers) {
+        tickers.forEach(ticker => {
+            const option = document.createElement('option');
+            option.value = ticker;
+            option.textContent = ticker;
+            tickerSelector.appendChild(option);
+        });
+        
+        if (tickers.length > 0) {
+            tickerSelector.value = tickers[0];
+            fetchAndDisplaySelectedTickerData(tickers[0]); 
+        } else {
+            selectedTickerNameElement.textContent = 'Ticker: No tickers available';
+            selectedTickerPredictionDateElement.textContent = 'Prediction for Date: N/A';
+            selectedTickerPredictedPriceElement.textContent = 'Predicted Price: N/A';
+            if (chartCanvas) chartCanvas.style.display = 'none';
+            renderStockChart("N/A", [], [], null, null, true); 
+        }
+        
+        tickerSelector.addEventListener('change', () => {
+            fetchAndDisplaySelectedTickerData(tickerSelector.value);
+        });
+    }
+
+    async function fetchLatestPredictionsForTable() {
+        try {
+            const response = await fetch('/predictions/latest_for_table');
+            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+            const data = await response.json();
+            predictionsTableBody.innerHTML = ''; 
+            if (data.status === 'success' && data.data) {
+                data.data.forEach(pred => {
+                    const row = predictionsTableBody.insertRow();
+                    row.insertCell().textContent = pred.ticker;
+                    const price = parseFloat(pred.predicted_price);
+                    row.insertCell().textContent = !isNaN(price) ? price.toFixed(2) : 'N/A';
+                    row.insertCell().textContent = pred.date; 
+                    row.insertCell().textContent = pred.model_mlflow_run_id || 'N/A';
+                });
+            } else { /* ... error handling ... */ }
+        } catch (error) { /* ... error handling ... */ }
+    }
+
+    async function fetchAndDisplaySelectedTickerData(ticker) {
+        selectedTickerPredictionErrorElement.style.display = 'none';
+        selectedTickerPredictionErrorElement.textContent = '';
+        selectedTickerNameElement.textContent = `Ticker: ${ticker}`;
+        selectedTickerPredictionDateElement.textContent = 'Prediction for Date: Fetching...';
+        selectedTickerPredictedPriceElement.textContent = 'Predicted Price: Fetching...';
+
+        if (stockChart) { stockChart.destroy(); stockChart = null; }
+        if (chartCanvas) chartCanvas.style.display = 'none';
+
+        try {
+            const response = await fetch(`/historical_context_chart/${ticker}`);
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({ detail: `HTTP error! Status: ${response.status}` }));
+                throw new Error(errorData.detail || `HTTP error! Status: ${response.status}`);
+            }
+            const data = await response.json();
+
+            if (data.status === 'success') {
+                if (data.prediction_reference_date) {
+                    selectedTickerPredictionDateElement.textContent = `Prediction for Date: ${data.prediction_reference_date}`;
+                } else {
+                    selectedTickerPredictionDateElement.textContent = 'Prediction for Date: N/A';
                 }
-            ]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                title: {
-                    display: true,
-                    text: `30-Day Price History for ${ticker} (Leading up to prediction for ${prediction_reference_date})`
-                },
-                tooltip: { mode: 'index', intersect: false },
-                legend: { display: true, position: 'top' }
-            },
-            scales: {
-                x: { 
-                    title: { display: true, text: "Date" },
-                    ticks: { maxRotation: 45, minRotation: 45, autoSkip: true, maxTicksLimit: 15 } // Adjusted for ~30 data points
-                },
-                y: { 
-                    title: { display: true, text: "Actual Price ($)" }, 
-                    beginAtZero: false 
+
+                const predictedPrice = parseFloat(data.predicted_price_for_ref_date);
+                if (!isNaN(predictedPrice)) {
+                    selectedTickerPredictedPriceElement.textContent = `Predicted Price: ${predictedPrice.toFixed(2)}`;
+                } else {
+                    selectedTickerPredictedPriceElement.textContent = 'Predicted Price: N/A';
+                    if(data.prediction_reference_date) {
+                         selectedTickerPredictionErrorElement.textContent = `No predicted price available for ${ticker} on ${data.prediction_reference_date}.`;
+                    } else {
+                         selectedTickerPredictionErrorElement.textContent = `No prediction data available for ${ticker}.`;
+                    }
+                    selectedTickerPredictionErrorElement.style.display = 'block';
                 }
+                
+                // Show canvas only if there's data to plot
+                if (chartCanvas && ( (data.historical_dates && data.historical_dates.length > 0) || (data.prediction_reference_date && !isNaN(predictedPrice))) ) {
+                    chartCanvas.style.display = 'block';
+                } else if (chartCanvas) {
+                    chartCanvas.style.display = 'none';
+                }
+
+
+                renderStockChart(
+                    ticker, data.historical_dates || [], data.historical_actuals || [],
+                    data.prediction_reference_date, data.predicted_price_for_ref_date
+                );
+
+            } else { throw new Error(data.detail || `Failed to fetch data for ${ticker}.`); }
+        } catch (error) {
+            console.error(`Error fetching data for ${ticker}:`, error);
+            selectedTickerPredictionDateElement.textContent = 'Prediction for Date: Error';
+            selectedTickerPredictedPriceElement.textContent = 'Predicted Price: Error';
+            selectedTickerPredictionErrorElement.textContent = `Error loading data: ${error.message}`;
+            selectedTickerPredictionErrorElement.style.display = 'block';
+            if (chartCanvas) chartCanvas.style.display = 'none';
+            renderStockChart(ticker, [], [], null, null, true); 
+        }
+    }
+
+    function renderStockChart(ticker, historicalDates, historicalActuals, predictionDate, predictedPrice, isError = false) {
+        if (!chartCanvas) { console.error("Chart canvas not found!"); return; }
+        const ctx = chartCanvas.getContext('2d');
+        if (stockChart) { stockChart.destroy(); }
+        
+        if (isError || (historicalDates.length === 0 && (!predictionDate || predictedPrice === null || typeof predictedPrice === 'undefined'))) {
+            console.warn(`Chart for ${ticker} not rendered due to error or insufficient data.`);
+            chartCanvas.style.display = 'none'; 
+            return;
+        }
+        chartCanvas.style.display = 'block';
+
+        const datasets = [];
+        const validHistoricalData = [];
+        if (historicalDates.length > 0 && historicalActuals.length === historicalDates.length) {
+            historicalDates.forEach((date, index) => {
+                const price = parseFloat(historicalActuals[index]);
+                if (!isNaN(price)) { validHistoricalData.push({ x: date, y: price }); }
+            });
+            if(validHistoricalData.length > 0) {
+                 datasets.push({
+                    label: `${ticker} - Actual (Last ~14 Trading Days)`, data: validHistoricalData,
+                    borderColor: 'rgb(54, 162, 235)', backgroundColor: 'rgba(54, 162, 235, 0.1)',
+                    tension: 0.1, pointRadius: 3, borderWidth: 2, type: 'line' });
             }
         }
-    });
-}
+
+        const validPredictedPrice = parseFloat(predictedPrice);
+        if (predictionDate && !isNaN(validPredictedPrice)) {
+            const predictionLineData = [];
+            if (validHistoricalData.length > 0) { predictionLineData.push(validHistoricalData[validHistoricalData.length - 1]); }
+            predictionLineData.push({ x: predictionDate, y: validPredictedPrice });
+            
+            datasets.push({
+                label: `${ticker} - Predicted`, data: predictionLineData,
+                borderColor: 'rgb(255, 99, 132)', borderDash: [5, 5], 
+                pointBackgroundColor: 'rgb(255, 99, 132)', pointRadius: 5, pointBorderColor: 'white',
+                pointBorderWidth: 1, borderWidth: 2, type: 'line', fill: false });
+        }
+
+        if (datasets.length === 0) {
+            console.warn(`No valid data to plot for ${ticker}. Hiding chart.`);
+            chartCanvas.style.display = 'none'; return;
+        }
+        
+        stockChart = new Chart(ctx, {
+            data: { datasets: datasets },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                plugins: {
+                    title: { display: true, text: `Stock Price Trend for ${ticker}` },
+                    tooltip: { mode: 'index', intersect: false, callbacks: { label: function(context) { let label = context.dataset.label || ''; if (label) { label += ': '; } if (context.parsed.y !== null) { label += '$' + context.parsed.y.toFixed(2); } return label; }}},
+                    legend: { position: 'top', }
+                },
+                scales: {
+                    x: { type: 'time', time: { unit: 'day', tooltipFormat: 'MMM dd, yyyy', displayFormats: { day: 'MMM dd' }}, title: { display: true, text: 'Date' }, ticks: { source: 'auto', maxRotation: 45, autoSkip: true, }},
+                    y: { title: { display: true, text: 'Price (USD)' }, beginAtZero: false, ticks: { callback: function(value) { return '$' + parseFloat(value).toFixed(2); }}}
+                },
+                interaction: { mode: 'nearest', axis: 'x', intersect: false }
+            }
+        });
+    }
+
+    fetchTickers(); 
+    fetchLatestPredictionsForTable();
+});
