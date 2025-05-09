@@ -150,3 +150,100 @@ This DAG orchestrates the complete model retraining lifecycle. It begins by ensu
 | `promote_candidate_to_production_task`    | `PythonOperator`     | `callable_promote_model_to_production`                                                                                                                                            | If chosen by branching, pulls the candidate's MLflow run ID (XCom). Finds its version in MLflow Registry. Sets the "Production" alias for `experiment_name` to this new model version.                                                                  | XCom (`candidate_model_version_to_promote_run_id`). `params.yaml` (MLflow config). MLflow server.                                                                | Updates MLflow Model Registry aliases.                                                                                                                                                                                               | `evaluate_and_branch_on_promotion_decision` |
 | `do_not_promote_task`                     | `DummyOperator`      | (Internal Airflow Operator)                                                                                                                                                       | If chosen by branching, does nothing. The candidate model was not promoted.                                                                                                                                                                   | None.                                                                                                                                                              | None.                                                                                                                                                                                                                                | `evaluate_and_branch_on_promotion_decision` |
 
+# Steps
+
+
+**Overall, your project has implemented a very significant portion of this MLOps architecture, especially the "Staging / Production" automated pipeline.** You have:
+
+1.  **Data/Feature Store:** Your PostgreSQL database serves this role, storing raw data, processed features, scaled data, scalers, etc.
+2.  **Experiment Tracking / Metadata Store:**
+    *   MLflow is used for experiment parameters, metrics, and artifacts.
+    *   Your PostgreSQL database also stores crucial metadata linked by `run_id` (best hyperparameters, scaler locations, dataset versions).
+3.  **Source Repository:** This is implicitly your Git/Bitbucket where your code resides.
+4.  **Automated ML Pipeline (in Production):** This is largely your `dag_stock_model_retraining.py`.
+5.  **Hyperparameter Tuning (in Production):** Covered by the `optimize_hyperparams_for_retraining` task within your retraining DAG.
+6.  **Model Training, Evaluation, Validation (in Production):** Covered by `train_candidate_model_task` and `evaluate_and_branch_on_promotion_decision` in your retraining DAG.
+7.  **Trained Model -> Model Registry (in Production):** Your `train_candidate_model_task` registers models, and `promote_candidate_to_production_task` updates the "Production" alias in MLflow.
+8.  **Performance Monitoring:** Your `monitor_model_performance_daily_task` in `dag_daily_stock_operations.py`.
+9.  **Trigger Continuous Training - CT:** Your `branch_based_on_performance` and `trigger_retraining_pipeline_task` in `dag_daily_stock_operations.py`.
+10. **Model Registry -> Continuous Delivery CD / Model Serving:**
+    *   MLflow is your Model Registry.
+    *   Your `dag_daily_stock_operations.py` (`get_production_model_details_daily` task) effectively performs CD by pulling the "Production" model for inference.
+    *   Your FastAPI app (`src/api/main.py`) acts as the "Prediction Service," serving predictions (though it reads them from the DB after batch prediction, rather than loading the model and predicting live in the API for every request).
+11. **Prediction Service / Generate O/P:** Your `make_daily_prediction` task in `dag_daily_stock_operations.py` generates batch predictions. The FastAPI app serves these.
+12. **Pipeline Deployment:** Docker and `docker-compose.yml` are used to deploy all services (Airflow, MLflow, Postgres, FastAPI).
+
+Where Your Project Fits and What's Covered:
+-------------------------------------------
+
+Let's break down the diagram sections and how your project components align:
+
+**1. Development Phase (Top Section of Diagram):**
+
+This phase is about experimentation, initial model development, and defining the pipeline structure.
+
+*   **Offline Data Extract for Model Training -> Data/Feature Store:**
+    *   **Your Implementation:** When you initially run `src/data/make_dataset.py --mode full_process` (perhaps manually or via a one-off script before automation), it populates your PostgreSQL "Data/Feature Store" with the initial full dataset.
+*   **Orchestrated Experiments | ML Training Pipeline (Development):**
+    *   **Data Treatment (EDA, Data Validation, Data Preparation):**
+        *   **EDA:** This is typically done in notebooks (your `notebooks` folder) using data from your PostgreSQL store. It's not explicitly automated in your DAGs as an "EDA report generation" step, but the capability is there.
+        *   **Data Validation (Development):** Implicitly, your Python scripts (`make_dataset.py`, `build_features.py`) perform validation by successfully processing data or failing. You don't seem to have a dedicated data validation framework like Great Expectations integrated into a "development exploration" pipeline.
+        *   **Data Preparation (Development):** `src/data/make_dataset.py` and `src/features/build_features.py` scripts, when run manually or in early pipeline tests, cover this.
+    *   **Hyperparameter Tuning (Model Training, Model Evaluation, Model Validation - Development):**
+        *   `src/models/optimize_hyperparams.py` can be run in a development context to find good hyperparameter ranges.
+        *   `src/models/train_model.py` and `src/models/evaluate_model.py` are used for training and evaluating experimental models. MLflow captures these experiments.
+*   **Source Code -> Source Repository - Git/Bitbucket:**
+    *   **Your Implementation:** All your Python scripts (`.py` files) are your source code, managed in Git.
+*   **Pipeline Deployment (from Development to Staging/Production):**
+    *   **Your Implementation:** This is the process of taking your tested DAG files (e.g., `dag_daily_stock_operations.py`, `dag_stock_model_retraining.py`) and Python scripts and deploying them into your Dockerized Airflow environment, which then becomes your "Staging/Production" system.
+*   **Trained Model -> Model Registry (from Development):**
+    *   **Your Implementation:** When you run `train_model.py` during development/experimentation, it registers the model in MLflow (your Model Registry). This model might not be "Production" yet but is available for consideration. The red box with the pin on the diagram is pointing here. **You are definitely doing this.**
+
+**2. Staging / Production Phase (Bottom Section of Diagram):**
+
+This is where your automated Airflow DAGs operate.
+
+*   **Data/Feature Store & Batch Fetching:**
+    *   **Your Implementation:** `dag_daily_stock_operations.py`'s `fetch_incremental_raw_data_daily` task (`make_dataset.py --mode incremental_fetch`) pulls new data into your PostgreSQL DB.
+*   **Automated ML Pipeline (triggered by CT):** This is your `dag_stock_model_retraining.py`.
+    *   **Data Validation (Automated):**
+        *   **Your Implementation:** Similar to development, this is largely implicit. If `make_dataset.py` or `build_features.py` encounters data it can't process (e.g., unexpected schema, too many NaNs after processing), the task will fail.
+    *   **Data Preparation (Automated):**
+        *   **Your Implementation:** `process_all_data_for_retraining_task` (`make_dataset.py --mode full_process`) and `build_features_for_retraining` (`build_features.py`) tasks in the retraining DAG.
+    *   **Model Training (Automated):**
+        *   **Your Implementation:** `train_candidate_model_task` (`train_model.py`) in the retraining DAG.
+    *   **Hyperparameter Tuning (Automated):**
+        *   **Your Implementation:** `optimize_hyperparams_for_retraining` (`optimize_hyperparams.py`) task in the retraining DAG.
+    *   **Model Evaluation (Automated):**
+        *   **Your Implementation:** `evaluate_and_branch_on_promotion_decision` task in the retraining DAG uses metrics from `train_model.py`'s evaluation output.
+    *   **Model Validation (Automated):**
+        *   **Your Implementation:** The comparison logic within `evaluate_and_branch_on_promotion_decision` (candidate vs. production) acts as model validation before promotion.
+*   **Experiment Tracking / Metadata Store (for Automated Pipeline):**
+    *   **Your Implementation:** The retraining DAG tasks log to MLflow (parameters, metrics for optuna trials, final model metrics) and update your PostgreSQL DB with `run_id`-specific artifacts (best params, etc.).
+*   **Performance Monitoring:**
+    *   **Your Implementation:** `monitor_model_performance_daily_task` (`monitor_performance.py`) in the daily DAG. It calculates metrics and stores them in `model_performance_log`.
+*   **Performance Reduced? -> Yes -> Trigger Continuous Training - CT:**
+    *   **Your Implementation:** The output of `monitor_performance.py` (via XCom) is used by `branch_based_on_performance`, which then runs `trigger_retraining_pipeline_task` if performance is reduced.
+*   **Trained Model (from Automated Pipeline) -> Model Registry:**
+    *   **Your Implementation:** If the candidate model from the retraining DAG is deemed better by `evaluate_and_branch_on_promotion_decision`, the `promote_candidate_to_production_task` updates the "Production" alias in MLflow (Model Registry). **The red box with the pin on the diagram is very relevant here, and you have this covered.**
+*   **Model Registry -> Continuous Delivery CD / Model Serving:**
+    *   **Your Implementation (CD):** The daily DAG's `get_production_model_details_daily` task fetches the latest model aliased "Production" from MLflow. This is a form of continuous delivery, ensuring the prediction task uses the best available model.
+    *   **Your Implementation (Model Serving):** The `make_daily_prediction` task uses this production model for batch predictions. The FastAPI application (`src/api/main.py`) then serves these pre-computed predictions from the database.
+        *   *Nuance:* The diagram's "Model Serving" often implies the serving layer (API) loads the model directly from the registry and predicts on demand. Your API serves predictions made in a batch job. This is a valid and often more scalable approach for non-real-time predictions.
+*   **Prediction Service / Generate O/P & Output:**
+    *   **Your Implementation:** The `make_daily_prediction` task is the core of generating output. The FastAPI app is the service exposing this output.
+
+**In summary, "Where are we now?"**
+
+You are firmly in the **"Staging / Production"** phase with a well-automated system. You have successfully implemented the core feedback loop:
+
+`Batch Fetching -> [Prediction Pipeline using Production Model] -> Performance Monitoring -> (if needed) Trigger Continuous Training -> [Automated Retraining Pipeline with HPO] -> Model Evaluation/Validation -> Promotion to Model Registry -> Next day's Prediction Pipeline uses new Production Model.`
+
+The "Development" phase components are supported by your scripts and tools (MLflow, notebooks, manual script execution) but are not as formally orchestrated by separate "development DAGs" as they might be in an extremely large-scale enterprise setup. For many projects, your approach is perfectly practical: develop scripts and DAGs locally or in a dev branch, then deploy/merge them into the production Airflow environment.
+
+The **red box with the pin** highlighting **"Trained Model -> Model Registry"** is a critical junction you have implemented in *both* your development workflow (when `train_model.py` is run for experiments) and, more importantly, in your automated production retraining pipeline (`dag_stock_model_retraining.py` culminating in the `promote_candidate_to_production_task`).
+
+**Potential areas for future enhancement (based *strictly* on the diagram, not necessarily practical needs for your project scale):**
+
+*   **Explicit, Automated Data Validation in DAGs:** Integrating tools like Great Expectations for schema checks, statistical drift detection, etc., as distinct tasks in your DAGs.
+*   **Formal "Development" Orchestration:** If the team grew significantly, you might have a separate Airflow instance or DAGs specifically for orchestrating development experiments before "promoting" pipeline code to production.
