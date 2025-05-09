@@ -1,4 +1,4 @@
-FROM python:3.11-slim
+FROM python:3.11.8
 WORKDIR /app
 
 # 1) Copy code API
@@ -12,7 +12,7 @@ COPY ./templates /opt/airflow/templates
 COPY frontend   ./templates/static
 
 # Install FastAPI + Uvicorn + Jinja2
-RUN pip install --no-cache-dir fastapi uvicorn jinja2
+RUN pip install --no-cache-dir fastapi uvicorn jinja2 pandas numpy yfinance pyyaml datetime psycopg2 sqlalchemy
 
 # Container listen at port 80 (Compose map 8000:80)
 EXPOSE 80

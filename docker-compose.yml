@@ -79,23 +79,24 @@ services:
       timeout: 30s
       retries: 5
 
-  # frontend:
-  #   build:
-  #     context: .
-  #     dockerfile: ./Dockerfile.frontend
-  #   container_name: stockpred-frontend
-  #   ports:
-  #     - "8000:8000" #"8000:80"
-  #   command: uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload 
-  #   volumes:
-  #   #  - ./data:/usr/share/nginx/html/data:ro
-  #     - ./data:/opt/airflow/data:ro # Mount the entire data directory from the host read-only
-  #     - ./src:/opt/airflow/src:ro # Assuming uvicorn runs from /opt/airflow
-  #     - ./templates:/opt/airflow/templates:ro # Mount templates read-only
-  #   environment:
-  #     - PYTHONPATH=/opt/airflow
-  #   depends_on:
-  #     - airflow-webserver
+  frontend:
+    build:
+      context: .
+      dockerfile: ./Dockerfile.frontend
+    container_name: stockpred-frontend
+    ports:
+      - "8000:8000" #"8000:80"
+    command: uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload 
+    volumes:
+    #  - ./data:/usr/share/nginx/html/data:ro
+      - ./data:/opt/airflow/data:ro # Mount the entire data directory from the host read-only
+      - ./src:/opt/airflow/src:ro # Assuming uvicorn runs from /opt/airflow
+      - ./templates:/opt/airflow/templates:ro # Mount templates read-only
+      - ./config:/opt/airflow/config:ro  # Mount config directory read-only
+    environment:
+      - PYTHONPATH=/opt/airflow
+    depends_on:
+      - airflow-webserver
 
 volumes:
   airflow-db-volume:

@@ -10,12 +10,12 @@ feature_engineering:
   prediction_length: 1 # Currently only supporting 1-day ahead
 
 optimization:
-  n_trials: 1
-  epochs: 5
+  n_trials: 10
+  epochs: 10
   patience: 5
 
 training:
-  epochs: 5
+  epochs: 20
 
 database:
   dbname: 'airflow'
@@ -51,6 +51,8 @@ model_promotion: # For retraining DAG's evaluation
 
 output_paths:
   raw_data_template: "/opt/airflow/data/raw/{ticker}_raw.pkl"
+  predictions_dir: "/opt/airflow/data/predictions" # Absolute path inside Docker containers
+
   # processed_data_path: "/opt/airflow/data/processed/all_processed_data.npz" # Saving as numpy archive
   # scalers_path: "/opt/airflow/data/processed/scalers.pkl"
   # split_data_path: "/opt/airflow/data/features/split_scaled_data.npz"

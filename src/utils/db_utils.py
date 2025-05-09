@@ -674,6 +674,112 @@ def get_prediction_for_date_ticker(
 
 # ------------------------------------------------------------
 
+def get_predictions_for_ticker_in_daterange(
+    db_config: dict, 
+    ticker: str, 
+    start_date_str: str, # 'YYYY-MM-DD'
+    end_date_str: str    # 'YYYY-MM-DD'
+) -> pd.DataFrame:
+    """
+    Retrieves all predictions (target_prediction_date, predicted_price) for a ticker
+    within a specified date range. Returns a Pandas DataFrame.
+    """
+    try:
+        conn = get_db_connection(db_config)
+        # Using pandas.read_sql for convenience
+        query = """
+            SELECT target_prediction_date, predicted_price
+            FROM latest_predictions
+            WHERE ticker = %s 
+              AND target_prediction_date >= %s 
+              AND target_prediction_date <= %s
+            ORDER BY target_prediction_date ASC;
+        """
+        df = pd.read_sql_query(query, conn, params=(ticker.upper(), start_date_str, end_date_str))
+        # Ensure target_prediction_date is datetime object for merging
+        if not df.empty:
+            df['target_prediction_date'] = pd.to_datetime(df['target_prediction_date'])
+        return df
+    except Exception as e:
+        logger.error(f"Error getting predictions for {ticker} in range {start_date_str}-{end_date_str}: {e}", exc_info=True)
+        return pd.DataFrame() # Return empty DataFrame on error
+    finally:
+        if 'conn' in locals() and conn:
+            conn.close()
+
+# ------------------------------------------------------------
+
+def get_all_distinct_tickers_from_predictions(db_config: dict) -> list[str]:
+    """
+    Retrieves a list of all unique ticker symbols from the latest_predictions table.
+    """
+    try:
+        conn = get_db_connection(db_config)
+        cursor = conn.cursor()
+        
+        cursor.execute("SELECT DISTINCT ticker FROM latest_predictions ORDER BY ticker ASC;")
+        results = cursor.fetchall()
+        
+        return [row[0] for row in results]
+    except Exception as e:
+        logger.error(f"Error getting distinct tickers from predictions: {e}", exc_info=True)
+        return []
+    finally:
+        if 'conn' in locals() and conn:
+            if 'cursor' in locals() and cursor: # Ensure cursor was defined
+                cursor.close()
+            conn.close()
+
+# ------------------------------------------------------------
+
+def get_latest_prediction_for_all_tickers(db_config: dict) -> list[dict]:
+    """
+    Retrieves the most recent prediction for every ticker from the latest_predictions table.
+    A prediction is defined as "latest" by the most recent target_prediction_date.
+    """
+    try:
+        conn = get_db_connection(db_config)
+        # Use DictCursor to get results as dictionaries
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor) 
+        
+        # Query to get the latest prediction for each ticker
+        # Uses DISTINCT ON which is specific to PostgreSQL and efficient for this.
+        # For other DBs, ROW_NUMBER() OVER (PARTITION BY ... ORDER BY ...) would be used.
+        query = """
+            SELECT DISTINCT ON (ticker) 
+                   ticker, 
+                   target_prediction_date, 
+                   predicted_price, 
+                   model_mlflow_run_id
+            FROM latest_predictions
+            ORDER BY ticker, target_prediction_date DESC;
+        """
+        cursor.execute(query)
+        results = cursor.fetchall()
+        
+        predictions_list = []
+        for row in results:
+            predictions_list.append({
+                "ticker": row["ticker"],
+                "predicted_price": row["predicted_price"],
+                # Format date to string if it's a date object from DB
+                "date": row["target_prediction_date"].isoformat() if isinstance(row["target_prediction_date"], date) else str(row["target_prediction_date"]),
+                "model_mlflow_run_id": row["model_mlflow_run_id"]
+            })
+        return predictions_list
+        
+    except Exception as e:
+        logger.error(f"Error getting latest predictions for all tickers from DB: {e}", exc_info=True)
+        return [] # Return empty list on error
+    finally:
+        if 'conn' in locals() and conn:
+            if 'cursor' in locals() and cursor:
+                cursor.close()
+            conn.close()
+
+
+# ------------------------------------------------------------
+
 # Save daily performance metrics to the database
 def save_daily_performance_metrics(
     db_config: dict,
