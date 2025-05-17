@@ -45,19 +45,13 @@ alert_email: 'your_actual_email@example.com' # For Airflow alerts
 schedules:
   daily_dag: '0 2 * * 1-5' # Example: 2 AM UTC Mon-Fri
 
-model_promotion: # For retraining DAG's evaluation
-  metric: "final_avg_mape_test" # Metric from train_model.py's eval output to compare
-  higher_is_better: False      # For MAPE, lower is better
+model_promotion:
+  metric: "final_avg_mape_test"
+  higher_is_better: False
 
 output_paths:
   raw_data_template: "/opt/airflow/data/raw/{ticker}_raw.pkl"
   predictions_dir: "/opt/airflow/data/predictions" # Absolute path inside Docker containers
-
-  # processed_data_path: "/opt/airflow/data/processed/all_processed_data.npz" # Saving as numpy archive
-  # scalers_path: "/opt/airflow/data/processed/scalers.pkl"
-  # split_data_path: "/opt/airflow/data/features/split_scaled_data.npz"
-  # best_params_path: "/opt/airflow/config/best_params.json" # Config might also need absolute if written by a task
-  # Note: We are mounting ./config to /opt/airflow/config, so this path for best_params is correct
 
 mlflow:
   experiment_name: "Stock_Price_Prediction_LSTM_Refactored"

@@ -7,7 +7,7 @@ import os
 import subprocess
 import logging
 import yaml
-import json 
+import json
 
 from airflow.models.dag import DAG
 from airflow.operators.bash import BashOperator
