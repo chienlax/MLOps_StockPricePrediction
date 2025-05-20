@@ -1,0 +1,21 @@
+FROM python:3.11.8
+WORKDIR /app
+
+# 1) Copy code API
+COPY src/api    ./api
+
+# 2) Copy template (Jinja2)
+COPY templates  ./templates
+COPY ./templates /opt/airflow/templates
+
+# 3) Copy frontend static files into templates/static
+COPY frontend   ./templates/static
+
+# Install FastAPI + Uvicorn + Jinja2
+RUN pip install --no-cache-dir fastapi uvicorn jinja2 pandas numpy yfinance pyyaml datetime psycopg2 sqlalchemy
+
+# Container listen at port 80 (Compose map 8000:80)
+EXPOSE 80
+
+# Initialize Uvicorn point at module api.main
+CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "80"]

@@ -7,59 +7,127 @@ import numpy as np
 import pandas as pd
 import yfinance as yf
 import ta
-from pathlib import Path
 import logging
 import os
 import sys
+from datetime import datetime, timedelta
+from typing import Optional, List, Dict, Tuple, Union, Any, Callable, Iterable
+from pathlib import Path
+
+try:
+    from src.utils.db_utils import (
+        setup_database,
+        check_ticker_exists, 
+        save_to_raw_table,
+        load_data_from_db,
+        save_processed_features_to_db,
+        get_last_data_timestamp_for_ticker,
+        get_db_connection 
+    )
+except ImportError:
+    sys.path.append(str(Path(__file__).resolve().parents[1])) # Add 'src' to path
+    from utils.db_utils import (
+        setup_database,
+        check_ticker_exists,
+        save_to_raw_table,
+        load_data_from_db,
+        save_processed_features_to_db,
+        get_last_data_timestamp_for_ticker,
+        get_db_connection
+    )
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 if not logger.hasHandlers():
-    handler = logging.StreamHandler() # Defaults to stderr
-    handler.setLevel(logging.INFO) # <--- ADD THIS LINE
+    handler = logging.StreamHandler()
+    handler.setLevel(logging.INFO)
     formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     handler.setFormatter(formatter)
     logger.addHandler(handler)
 
-def load_data(tickers_list, period, interval, fetch_delay, output_dir):
-    """Loads data for tickers and saves each as a pickle file."""
-    output_dir = Path(output_dir)
+# ------------------------------------------------------
+
+def load_data(tickers_list: list, period: str, interval: str, fetch_delay: int, db_config: dict):
+    """
+    Loads raw stock data for the given tickers from Yahoo Finance.
+    - If a ticker has existing data in the database, it fetches new data incrementally.
+    - Otherwise, it fetches data for the specified 'period'.
+    Saves all fetched data to the 'raw_stock_data' table in the database.
     
-    # --- DEBUGGING ---
-    abs_output_dir = output_dir.resolve() 
-    logger.info(f"Attempting to use RELATIVE output dir: {output_dir}")
-    logger.info(f"Attempting to use ABSOLUTE output dir: {abs_output_dir}")
-    logger.info(f"Current Working Directory inside container: {os.getcwd()}")
-    # --- END DEBUGGING ---
+    Args:
+        tickers_list (list): List of stock tickers (e.g., ['AAPL', 'MSFT']).
+        period (str): The default period to fetch if no data exists for a ticker (e.g., "1y", "max").
+                      This is IGNORED if fetching incrementally for a ticker.
+        interval (str): Data interval (e.g., "1d", "1h").
+        fetch_delay (int): Seconds to wait between API calls for different tickers.
+        db_config (dict): Database connection configuration.
+    """
+    # setup_database(db_config) # Moved to run_processing to be called once.
 
-    try:
-        logger.info(f"Attempting to create directory: {abs_output_dir}")
-        output_dir.mkdir(parents=True, exist_ok=True)
-        logger.info(f"Successfully called mkdir for: {abs_output_dir} (might not indicate success if permissions are wrong)")
-    except Exception as e:
-         logger.error(f"ERROR during mkdir for {abs_output_dir}: {e}", exc_info=True)
-         # If mkdir fails, we definitely won't save files
-         return 
-
-    logger.info(f"Saving raw data to: {abs_output_dir}") # Log the absolute path
+    logger.info("Starting raw data loading/updating from Yahoo Finance.")
 
     for t in tickers_list:
-        output_path = output_dir / f"{t}_raw.pkl"
-        if output_path.exists():
-            logger.info(f"Skipping download for {t}, file exists: {output_path}")
-            continue
+        last_known_date_in_db = get_last_data_timestamp_for_ticker(db_config, t)
+        # last_known_date_in_db = None
+        
+        yf_start_date_str = None
+        fetch_description = ""
+
+        if last_known_date_in_db:
+            # yfinance 'start' is inclusive. We want data *after* the last known date.
+            # Ensure last_known_date_in_db is a datetime object for timedelta
+            if isinstance(last_known_date_in_db, str): # Should not happen if db_utils returns datetime
+                last_known_date_in_db = pd.to_datetime(last_known_date_in_db)
+
+            yf_start_date = last_known_date_in_db + timedelta(days=1)
+            yf_start_date_str = yf_start_date.strftime('%Y-%m-%d')
+            
+            # Check if start_date is in the future (e.g. trying to fetch on a weekend for next monday)
+            if yf_start_date > datetime.now():
+                logger.info(f"Calculated start date {yf_start_date_str} for {t} is in the future. No data to fetch.")
+                continue
+
+            fetch_description = f"incrementally for {t} from {yf_start_date_str}"
+        else:
+            # No data in DB for this ticker, fetch the full 'period'
+            fetch_description = f"full period '{period}' for {t}"
+
         try:
-            data = yf.Ticker(t).history(period=period, interval=interval)
-            if not data.empty:
-                with open(output_path, 'wb') as f:
-                    pickle.dump(data, f)
-                logger.info(f"Loaded and saved raw data for {t} to {output_path}") 
-            else:
-                logger.warning(f"No data loaded for {t}")
-            time.sleep(fetch_delay)
-        except Exception as e:
-            logger.error(f"Error loading {t}: {e}", exc_info=True)
+            logger.info(f"Attempting to download data {fetch_description}")
+            
+            # If yf_start_date_str is set, 'period' will be ignored by yfinance.
+            # If yf_start_date_str is None, 'period=period' will be used.
+            # yfinance's history() period argument is used if start and end are not provided.
+            # If start is provided, period is ignored.
+            data = yf.Ticker(t).history(
+                period=period if not yf_start_date_str else None,
+                start=yf_start_date_str, # Will be None if fetching full period
+                interval=interval
+            )
+            
+            if data.empty:
+                if yf_start_date_str:
+                    logger.info(f"No new data found for {t} since {last_known_date_in_db.strftime('%Y-%m-%d') if last_known_date_in_db else 'beginning'}.")
+                else:
+                    logger.warning(f"No data returned by yfinance for {t} for period '{period}'.")
+                continue # Move to the next ticker
+                
+            logger.info(f"Downloaded {len(data)} records for {t} from yfinance.")
+            
+            records_added = save_to_raw_table(t, data, db_config)
+            logger.info(f"Saved/Updated {records_added} records for {t} in the database.")
+            
+            if fetch_delay > 0:
+                time.sleep(fetch_delay)
+            
+        except Exception as e_ticker:
+            logger.error(f"Error processing ticker {t}: {e_ticker}", exc_info=True)
+            continue # Continue to the next ticker
+            
+    logger.info("Finished raw data loading/updating from Yahoo Finance.")
+
+# ------------------------------------------------------
 
 def add_technical_indicators(ticker_data):
     for t in ticker_data:
@@ -109,198 +177,324 @@ def add_technical_indicators(ticker_data):
         ticker_data[t] = df
     return ticker_data
 
+# ------------------------------------------------------
+
 def preprocess_data(df):
-    # Fill forward then backward to handle NaNs
-    # df = df.fillna(method='ffill').fillna(method='bfill')
-    df = df.ffill().bfill()
-    # Create target variable (next day's close price)
-    df['Target'] = df['Close'].shift(-1)
-    # Drop the last row since it will have NaN target
-    df = df.dropna()
-    return df
+    try:
+        original_shape = df.shape
+        # Fill forward then backward to handle NaNs
+        df = df.ffill().bfill()
+        
+        # Check if we have NaNs after filling
+        nan_count = df.isna().sum().sum()
+        if nan_count > 0:
+            logger.warning(f"Still have {nan_count} NaN values after fill forward/backward")
+            
+        # Create target variable (next day's close price)
+        df['Target'] = df['Close'].shift(-1)
+        
+        # Drop the last row since it will have NaN target
+        df = df.dropna()
+        
+        logger.debug(f"Preprocessed data shape changed from {original_shape} to {df.shape}")
+        return df
+        
+    except Exception as e:
+        logger.error(f"Error in preprocess_data: {e}", exc_info=True)
+        raise
+
+# ------------------------------------------------------
 
 def align_and_process_data(ticker_data):
-    tickers = list(ticker_data.keys())
-    
-    ticker_data = {t: preprocess_data(df) for t, df in ticker_data.items()}
-    
-    all_indices = set().union(*[ticker_data[d].index for d in ticker_data])
-    aligned_data = {}
-    
-    for t in tickers:
-        aligned_data[t] = ticker_data[t].reindex(index=all_indices).sort_index()
-    
-    # Get feature columns (excluding Target)
-    first_ticker = tickers[0]
-    feature_columns = [col for col in aligned_data[first_ticker].columns if col != 'Target']
-    num_features = len(feature_columns)
-    num_stocks = len(tickers)
-    
-    # Create 3D arrays: (timesteps, stocks, features)
-    processed_data = np.zeros((len(all_indices), num_stocks, num_features))
-    targets = np.zeros((len(all_indices), num_stocks))
-    
-    for i, ticker in enumerate(tickers):
-        df = aligned_data[ticker][feature_columns + ['Target']].fillna(method='ffill').fillna(method='bfill')
-        processed_data[:, i, :] = df[feature_columns].values
-        targets[:, i] = df['Target'].values
-    
-    # Clean any remaining NaNs
-    nan_mask = np.isnan(processed_data).any(axis=(1, 2)) | np.isnan(targets).any(axis=1)
-    processed_data = processed_data[~nan_mask]
-    targets = targets[~nan_mask]
-    
-    return processed_data, targets, feature_columns, tickers
+    try:
+        tickers = list(ticker_data.keys())
+        logger.info(f"Aligning and processing data for {len(tickers)} tickers")
+        
+        ticker_data = {t: preprocess_data(df) for t, df in ticker_data.items()}
+        
+        all_indices = set().union(*[ticker_data[d].index for d in ticker_data])
+        logger.info(f"Combined dataset has {len(all_indices)} timepoints")
+        
+        aligned_data = {}
+        
+        for t in tickers:
+            aligned_data[t] = ticker_data[t].reindex(index=all_indices).sort_index()
+        
+        # Get feature columns (excluding Target)
+        first_ticker = tickers[0]
+        feature_columns = [col for col in aligned_data[first_ticker].columns if col != 'Target']
+        num_features = len(feature_columns)
+        num_stocks = len(tickers)
+        
+        logger.info(f"Creating 3D array with dimensions: timepoints={len(all_indices)}, stocks={num_stocks}, features={num_features}")
+        
+        # Create 3D arrays: (timesteps, stocks, features)
+        processed_data = np.zeros((len(all_indices), num_stocks, num_features))
+        targets = np.zeros((len(all_indices), num_stocks))
+        
+        for i, ticker in enumerate(tickers):
+            df = aligned_data[ticker][feature_columns + ['Target']].ffill().bfill() #fillna(method='ffill').fillna(method='bfill')
+            processed_data[:, i, :] = df[feature_columns].values
+            targets[:, i] = df['Target'].values
+        
+        # Check for NaNs
+        nan_count = np.isnan(processed_data).sum()
+        if nan_count > 0:
+            logger.warning(f"Found {nan_count} NaN values in processed data before cleaning")
+            
+        # Clean any remaining NaNs
+        nan_mask = np.isnan(processed_data).any(axis=(1, 2)) | np.isnan(targets).any(axis=1)
+        processed_data = processed_data[~nan_mask]
+        targets = targets[~nan_mask]
+        
+        logger.info(f"Final processed data shape after NaN removal: {processed_data.shape}")
+        logger.info(f"Final targets shape after NaN removal: {targets.shape}")
+        
+        return processed_data, targets, feature_columns, tickers
+        
+    except Exception as e:
+        logger.error(f"Error in align_and_process_data: {e}", exc_info=True)
+        raise
+
+# ------------------------------------------------------
 
 def filter_correlated_features(ticker_data, threshold=0.9):
     """
     Analyze feature correlations and remove highly correlated features
     Returns filtered data and list of features to keep
     """
-    print(f"Filtering highly correlated features with threshold {threshold}")
-    
-    # Use the first ticker as reference for correlation analysis
-    first_ticker = list(ticker_data.keys())[0]
-    df = ticker_data[first_ticker].copy()
-    
-    # Calculate correlation matrix
-    corr_matrix = df.corr().abs()
-    
-    # Create a mask for the upper triangle
-    upper = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
-    
-    # Find features with correlation greater than threshold
-    to_drop = [column for column in upper.columns if any(upper[column] > threshold)]
-    
-    print(f"Identified {len(to_drop)} highly correlated features to remove: {to_drop}")
+    try:
+        logger.info(f"Filtering highly correlated features with threshold {threshold}")
+        
+        # Use the first ticker as reference for correlation analysis
+        first_ticker = list(ticker_data.keys())[0]
+        df = ticker_data[first_ticker].copy()
+        
+        # Calculate correlation matrix
+        corr_matrix = df.corr().abs()
+        
+        # Create a mask for the upper triangle
+        upper = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
+        
+        # Find features with correlation greater than threshold
+        to_drop = [column for column in upper.columns if any(upper[column] > threshold)]
+        
+        logger.info(f"Identified {len(to_drop)} highly correlated features to remove")
+        
+        if 'Close' in to_drop:
+            logger.info("Excluding 'Close' column from removal list.")
+            to_drop.remove('Close')
+        
+        # Print top correlations for debugging
+        top_corr_pairs = []
+        for i in range(len(corr_matrix.columns)):
+            for j in range(i+1, len(corr_matrix.columns)):
+                col1, col2 = corr_matrix.columns[i], corr_matrix.columns[j]
+                corr_value = corr_matrix.iloc[i, j]
+                if corr_value > threshold:
+                    top_corr_pairs.append((col1, col2, corr_value))
+        
+        # Sort by correlation value and print top 10
+        top_corr_pairs.sort(key=lambda x: x[2], reverse=True)
+        logger.info("Top correlated feature pairs:")
+        for col1, col2, corr in top_corr_pairs[:10]:
+            logger.info(f"  {col1} - {col2}: {corr:.4f}")
+        
+        logger.info(f"Final list of {len(to_drop)} features to remove")
+        
+        # Features to keep
+        features_to_keep = [col for col in df.columns if col not in to_drop]
+        
+        # Filter features for all tickers
+        filtered_ticker_data = {}
+        for ticker, data in ticker_data.items():
+            filtered_ticker_data[ticker] = data[features_to_keep]
+        
+        return filtered_ticker_data, features_to_keep
+        
+    except Exception as e:
+        logger.error(f"Error in feature correlation filtering: {e}", exc_info=True)
+        # Return original data if there's an error
+        logger.info("Returning original data due to error in correlation filtering")
+        return ticker_data, list(ticker_data[list(ticker_data.keys())[0]].columns)
 
-    if 'Close' in to_drop:
-        print("Excluding 'Close' column from removal list.")
-        to_drop.remove('Close')
+# ------------------------------------------------------
 
-    print(f"Final list of {len(to_drop)} features to remove: {to_drop}")
-    
-    # Features to keep
-    features_to_keep = [col for col in df.columns if col not in to_drop]
-    
-    # Filter features for all tickers
-    filtered_ticker_data = {}
-    for ticker, data in ticker_data.items():
-        filtered_ticker_data[ticker] = data[features_to_keep]
-    
-    return filtered_ticker_data, features_to_keep
-
-def run_processing(config_path: str):
-    """Main function to run all data processing steps."""
+def run_processing(config_path: str, mode: str = 'full_process') -> Optional[str]:
+    """
+    Main function to run data processing steps.
+    - 'incremental_fetch' mode: Calls load_data to fetch only new raw data and saves to DB.
+    - 'full_process' mode: Calls load_data to ensure raw data is up-to-date,
+                           then processes all raw data from DB for training, saves features, and returns a run_id.
+    """
     try:
         with open(config_path, 'r') as f:
             params = yaml.safe_load(f)
-        logger.debug(f"Loaded parameters: {params}") # Use logger.debug for verbose info
+        logger.info(f"Loaded configuration from {config_path}")
 
-        # Define paths from config
-        raw_data_dir = Path(params['output_paths']['raw_data_template']).parent
-        processed_output_path = Path(params['output_paths']['processed_data_path'])
-        processed_output_path.parent.mkdir(parents=True, exist_ok=True)
+        # Get database configuration
+        logger.info("Setting up/Verifying database schema...")
+        db_config = params['database']
+        setup_database(db_config)
+        logger.info(f"Using database configuration: host={db_config['host']}, dbname={db_config['dbname']}")
 
-        logger.info(f"Raw data directory: {raw_data_dir}")
-        logger.info(f"Processed data output path: {processed_output_path}")
+        # Log key configuration parameters
+        logger.info(f"Processing with parameters: tickers={params['data_loading']['tickers']}, "
+                   f"period={params['data_loading']['period']}, "
+                   f"interval={params['data_loading']['interval']}")
 
-        tickers_list = params['data_loading']['tickers']
-        period = params['data_loading']['period']
-        interval = params['data_loading']['interval']
-        fetch_delay = params['data_loading']['fetch_delay']
+        data_loading_params = params['data_loading']
+        tickers_list = data_loading_params['tickers']
+
+        period = data_loading_params['period']
+        default_fetch_period = data_loading_params['period']
+
+        interval = data_loading_params['interval']
+        fetch_delay = data_loading_params['fetch_delay']
         corr_threshold = params['feature_engineering']['correlation_threshold']
 
-        # 1. Load Raw Data (or ensure it's downloaded)
-        logger.info("--- Starting Data Loading ---")
-        load_data(tickers_list, period, interval, fetch_delay, raw_data_dir)
-        logger.info("--- Finished Data Loading ---")
+        if mode == 'incremental_fetch':
+            logger.info("--- Starting Mode: Incremental Raw Data Fetch ---")
+            load_data(tickers_list, default_fetch_period, interval, fetch_delay, db_config)
+            logger.info("--- Finished Mode: Incremental Raw Data Fetch ---")
+            return None
+        
+        elif mode == 'full_process':
+            logger.info("--- Starting Mode: Full Data Processing for Training ---")
+            
+            logger.info("Step 1.1: Ensuring raw data is up-to-date (calling load_data)...")
+            load_data(tickers_list, default_fetch_period, interval, fetch_delay, db_config)
+            logger.info("Step 1.1: Finished ensuring raw data is up-to-date.")
 
-        # Load from saved pickles
-        ticker_data = {}
-        for t in tickers_list:
-            raw_path = raw_data_dir / f"{t}_raw.pkl"
-            if raw_path.exists():
-                with open(raw_path, 'rb') as f:
-                    ticker_data[t] = pickle.load(f)
-            else:
-                logger.warning(f"Raw data file not found for {t} at {raw_path}")
+            logger.info("Step 1.2: Loading all available raw data from database...")
+            ticker_data_from_db = load_data_from_db(db_config, tickers_list)
+            if not ticker_data_from_db or all(df.empty for df in ticker_data_from_db.values()):
+                logger.error("No raw data found in the database for any ticker after load_data. Cannot proceed.")
+                return None
+            logger.info(f"Loaded data for {len(ticker_data_from_db)} tickers from database.")
 
-        # Filter out any tickers where data wasn't loaded
-        ticker_data = {k: v for k, v in ticker_data.items() if v is not None and not v.empty}
-        if not ticker_data:
-            logger.error("No valid ticker data loaded. Exiting.")
-            raise ValueError("No valid ticker data loaded. Exiting.")
-        loaded_tickers = list(ticker_data.keys())
+            logger.info("Step 1.3: Adding technical indicators...")
+            ticker_data_with_ta = add_technical_indicators(ticker_data_from_db.copy())
+            logger.info("Step 1.3: Finished adding technical indicators.")
+            
+            logger.info("Step 1.4: Preprocessing individual ticker data...")
+            ticker_data_preprocessed = {}
+            for ticker, df_ta in ticker_data_with_ta.items():
+                if df_ta.empty:
+                    logger.warning(f"DataFrame for {ticker} is empty after TA. Skipping preprocessing for it.")
+                    continue
+                ticker_data_preprocessed[ticker] = preprocess_data(df_ta.copy())
+            
+            if not ticker_data_preprocessed or all(df.empty for df in ticker_data_preprocessed.values()):
+                logger.error("No data available after preprocessing all tickers. Cannot proceed.")
+                return None
+            logger.info("Step 1.4: Finished preprocessing individual ticker data.")
 
-        # 2. Add Technical Indicators
-        logger.info("--- Starting Feature Engineering (Indicators) ---")
-        ticker_data = add_technical_indicators(ticker_data)
-        logger.info("--- Finished Feature Engineering (Indicators) ---")
-
-        # 3. Filter Correlated Features
-        logger.info("--- Starting Feature Filtering ---")
-        ticker_data, remaining_features = filter_correlated_features(ticker_data, corr_threshold)
-        logger.info(f"Features remaining after filtering: {len(remaining_features)}")
-        logger.info("--- Finished Feature Filtering ---")
-
-        # 4. Align and Process
-        logger.info("--- Starting Data Alignment & Processing ---")
-        processed_data, targets, feature_columns, final_tickers = align_and_process_data(ticker_data)
-        logger.info(f"Processed data shape: {processed_data.shape}")
-        logger.info(f"Targets shape: {targets.shape}")
-        logger.info(f"Final tickers in order: {final_tickers}")
-        logger.info("--- Finished Data Alignment & Processing ---")
-
-        # 5. Save Processed Data
-        # logger.info(f"--- Saving Processed Data to {processed_output_path} ---")
-        # try:
-        #     np.savez(
-        #         processed_output_path,
-        #         processed_data=processed_data,
-        #         targets=targets,
-        #         feature_columns=np.array(feature_columns, dtype=object),
-        #         tickers=np.array(final_tickers, dtype=object)
-        #     )
-        #     logger.info(f"Successfully saved processed data to {processed_output_path}")
-        # except Exception as e:
-        #         logger.error(f"Failed to save processed data to {processed_output_path}", exc_info=True)
-        #         raise # Re-raise the exception so Airflow task fails
-        # logger.info("--- Finished Saving Processed Data ---")
-
-        absolute_save_path = processed_output_path.resolve()
-        logger.info(f"Attempting to save to absolute path: {absolute_save_path}")
-        try:
-            np.savez(
-                processed_output_path,
-                processed_data=processed_data,
-                targets=targets,
-                feature_columns=np.array(feature_columns, dtype=object),
-                tickers=np.array(final_tickers, dtype=object)
+            logger.info("Step 1.5: Aligning data and creating final numpy arrays...")
+            processed_data_np, targets_np, feature_columns_list, final_tickers_list = align_and_process_data(
+                ticker_data_preprocessed.copy() 
             )
-            logger.info(f"Successfully saved processed data to {processed_output_path}")
-            # Add an existence check right after saving
-            if absolute_save_path.exists():
-                logger.info(f"Verified file exists at: {absolute_save_path}")
-            else:
-                logger.error(f"!!! File DOES NOT exist immediately after saving at: {absolute_save_path}")
-        except Exception as e:
-            logger.error(f"Failed to save processed data to {processed_output_path}", exc_info=True)
-            raise
+            if processed_data_np is None or targets_np is None: # Check if align_and_process_data indicated failure
+                logger.error("Failed to align and process data into numpy arrays. Cannot proceed.")
+                return None
+            logger.info("Step 1.5: Finished aligning data and creating numpy arrays.")
 
+            current_run_id = datetime.now().strftime('%Y%m%d_%H%M%S')
+            logger.info(f"Step 1.6: Saving processed feature data to database with run_id: {current_run_id}...")
+            save_processed_features_to_db(
+                db_config,
+                processed_data_np,
+                targets_np,
+                feature_columns_list,
+                final_tickers_list,
+                current_run_id
+            )
+            logger.info(f"Step 1.6: Successfully saved processed feature data for run_id: {current_run_id}.")
+            logger.info("--- Finished Mode: Full Data Processing for Training ---")
+            return current_run_id
+
+        else:
+            logger.error(f"Invalid mode specified: {mode}. Choose 'incremental_fetch' or 'full_process'.")
+            return None
 
     except Exception as e:
-        logger.error("An error occurred during the data processing pipeline.", exc_info=True)
-        raise # Re-raise the exception to ensure Airflow task fails
+        logger.error(f"Error in run_processing (mode: {mode}): {e}", exc_info=True)
+        if mode == 'full_process':
+            return None
+        raise
+
+# ------------------------------------------------------
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--config', type=str, 
-                        required=True, help='Path to the configuration file (params.yaml)')
+    parser = argparse.ArgumentParser(description="Data ingestion and processing script for stock prediction.")
+    parser.add_argument(
+        '--config',
+        type=str,
+        default='config/params.yaml', 
+        help='Path to the configuration file (e.g., config/params.yaml)'
+    )
+    parser.add_argument(
+        '--mode',
+        type=str,
+        choices=['incremental_fetch', 'full_process'],
+        default='full_process', 
+        help="Operation mode: 'incremental_fetch' for daily raw data updates, "
+             "'full_process' for generating a complete training dataset with a new run_id."
+    )
     args = parser.parse_args()
+    config_path_arg = args.config
+    mode_arg = args.mode
 
-    logger.info(f"Starting data processing script with config: {args.config}")
-    print("--- PRINT TEST: Starting Data Loading ---")
+    # Resolve config path to be absolute for robustness
+    config_path_resolved = Path(config_path_arg)
+    if not config_path_resolved.is_absolute():
+        # Try to resolve relative to the script's directory or project root
+        # This logic might need adjustment based on how/where you run the script
+        if (Path.cwd() / config_path_resolved).exists():
+            config_path_resolved = (Path.cwd() / config_path_resolved).resolve()
+        elif (Path(__file__).parent.parent.parent / config_path_resolved).exists(): # Assuming script is in src/data/
+            config_path_resolved = (Path(__file__).parent.parent.parent / config_path_resolved).resolve()
+        else:
+            logger.error(f"Configuration file not found: {config_path_arg} (resolved to {config_path_resolved})")
+            sys.exit(1)
+    
+    if not config_path_resolved.exists():
+        logger.error(f"Configuration file not found: {config_path_resolved}")
+        sys.exit(1)
 
-    run_processing(args.config)
-    logger.info("Data processing script finished.")
+    logger.info(f"Starting data processing script with resolved config: {config_path_resolved} in mode: {mode_arg}")
+
+    try:
+        with open(config_path_resolved, 'r') as f:
+            config_params = yaml.safe_load(f)
+            if 'database' not in config_params:
+                logger.error("Database configuration missing from params.yaml")
+                sys.exit(1)
+            required_db_fields = ['dbname', 'user', 'password', 'host', 'port']
+            missing_fields = [field for field in required_db_fields if field not in config_params['database']]
+            if missing_fields:
+                logger.error(f"Missing required database configuration fields: {missing_fields}")
+                sys.exit(1)
+        
+        logger.info(f"Using PostgreSQL database at {config_params['database']['host']}:{config_params['database']['port']}")
+
+        returned_value = run_processing(str(config_path_resolved), mode=mode_arg)
+        
+        if mode_arg == 'full_process':
+            if returned_value: 
+                logger.info(f"Full processing completed. Dataset run_id: {returned_value}")
+                print(f"RUN_ID:{returned_value}") 
+            else:
+                logger.error("Full processing mode did not return a run_id. Check logs for errors.")
+                sys.exit(1) 
+        else: 
+            logger.info(f"Incremental fetch mode completed.")
+            
+        logger.info(f"Data processing script (mode: {mode_arg}) finished successfully.")
+        
+    except yaml.YAMLError as e_yaml:
+        logger.error(f"Error parsing configuration file {config_path_resolved}: {e_yaml}", exc_info=True)
+        sys.exit(1)
+    except Exception as e_main_script:
+        logger.error(f"Fatal error in data processing script (mode: {mode_arg}): {e_main_script}", exc_info=True)
+        sys.exit(1)

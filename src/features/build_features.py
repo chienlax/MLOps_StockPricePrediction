@@ -1,27 +1,42 @@
 # src/features/build_features.py
 import argparse
-import pickle
 import yaml
+import logging
+import sys
+import os
 import numpy as np
 from sklearn.preprocessing import MinMaxScaler
 from pathlib import Path
+from datetime import datetime
+from typing import Optional, Dict, Any
 
-# Goal: Load processed data, create sequences, split into train/test, scale data, and save scaled data and scalers
+try:
+    from src.utils.db_utils import (
+        get_db_connection,
+        load_processed_features_from_db,
+        save_scaled_features,
+        save_scalers
+    )
+except ImportError:
+    sys.path.append(str(Path(__file__).resolve().parents[1])) 
+    from utils.db_utils import (
+        load_processed_features_from_db,
+        save_scaled_features,
+        save_scalers
+    )
 
-# Move create_sequences and scale_data here.
-# Add argparse.
-# Load parameters from params.yaml.
-# Load processed data from the path specified in params.yaml.
-# Perform train/test split.
-# Scale data and save X_train_scaled, y_train_scaled, X_test_scaled, y_test_scaled using np.savez.
-# Save the fitted scalers_x and y_scalers using pickle.
+logger = logging.getLogger(__name__)
+if not logger.handlers:
+    handler = logging.StreamHandler()
+    handler.setLevel(logging.INFO)
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
 
+# ---------------------------------------------------------------------
 
 # --- Building features functions ---
-# create_sequences(data_x, data_y, seq_len, pred_len) -> np.ndarray, np.ndarray
-# scale_data(X_train, X_test, y_train, y_test, num_features, num_stocks) -> scaled_data..., scalers...
-
-#%%
 def create_sequences(data_x, data_y, seq_len, pred_len):
     """Create sequences for time series forecasting"""
     sequences_x = []
@@ -33,8 +48,6 @@ def create_sequences(data_x, data_y, seq_len, pred_len):
         sequences_y.append(seq_y)
     return np.array(sequences_x), np.array(sequences_y)
 
-#%%
-# --- Modify scale_data slightly ---
 def scale_data(X_train, X_test, y_train, y_test, num_features, num_stocks):
     """Scale the data using separate MinMaxScaler for each feature and each stock"""
     # Create a 2D array of scalers for features (num_stocks x num_features)
@@ -70,77 +83,176 @@ def scale_data(X_train, X_test, y_train, y_test, num_features, num_stocks):
     
     return X_train_scaled, X_test_scaled, y_train_scaled, y_test_scaled, scalers_x, y_scalers
 
-def run_feature_building(config_path: str):
-    with open(config_path, 'r') as f:
-        params = yaml.safe_load(f)
+# ------------------------------------------------------
 
-    # Load paths and parameters
-    processed_data_path = Path(params['output_paths']['processed_data_path'])
-    split_data_output_path = Path(params['output_paths']['split_data_path'])
-    scalers_output_path = Path(params['output_paths']['scalers_path'])
-    split_data_output_path.parent.mkdir(parents=True, exist_ok=True)
-    scalers_output_path.parent.mkdir(parents=True, exist_ok=True)
+def run_feature_building(config_path: str, run_id_arg: str) -> Optional[str]:
+    """
+    Run feature building process using data from a specific run_id.
+    Loads processed data, creates sequences, scales data, and saves scaled features and scalers to DB.
+    Args:
+        config_path (str): Path to the params.yaml configuration file.
+        run_id_arg (str): The specific run_id for the processed dataset to use.
+    Returns:
+        Optional[str]: The run_id_arg if successful, None otherwise.
+    """
 
-    seq_len = params['feature_engineering']['sequence_length']
-    pred_len = params['feature_engineering']['prediction_length']
-    train_ratio = 0.8 # Or load from params if needed
+    try:
+        with open(config_path, 'r') as f:
+            params = yaml.safe_load(f)
 
-    # 1. Load Processed Data
-    print(f"--- Loading Processed Data from {processed_data_path} ---")
-    data = np.load(processed_data_path, allow_pickle=True)
-    processed_data = data['processed_data']
-    targets = data['targets']
-    # feature_columns = data['feature_columns'] # Not strictly needed here
-    # tickers = data['tickers'] # Not strictly needed here
-    print("--- Finished Loading Processed Data ---")
+        db_config = params['database']
+        logger.info(f"Feature building using PostgreSQL database at {db_config['host']}:{db_config['port']}")
+        
+        # Use the passed run_id_arg directly
+        current_run_id = run_id_arg 
+        logger.info(f"Targeting dataset with run_id: {current_run_id}")
+        
+        feature_eng_params = params['feature_engineering']
+        seq_len = feature_eng_params['sequence_length']
+        pred_len = feature_eng_params['prediction_length']
+        train_ratio = feature_eng_params.get('train_ratio', 0.8)
 
-    num_features = processed_data.shape[2]
-    num_stocks = processed_data.shape[1]
+        # 1. Load Processed Data from database using current_run_id
+        logger.info(f"--- Loading Processed Data from database for run_id: {current_run_id} ---")
+        processed_data_dict = load_processed_features_from_db(db_config, run_id=current_run_id)
+        
+        if not processed_data_dict:
+            logger.error(f"No processed data found in database for run_id: {current_run_id}. Cannot build features.")
+            return None
+        
+        processed_data_np = processed_data_dict['processed_data'] # Shape: (timesteps, stocks, features)
+        targets_np = processed_data_dict['targets']             # Shape: (timesteps, stocks)
+        feature_columns = processed_data_dict['feature_columns']
+        tickers = processed_data_dict['tickers']
+        
+        if processed_data_np is None or targets_np is None or processed_data_np.size == 0 or targets_np.size == 0:
+            logger.error(f"Loaded processed data or targets are empty/None for run_id: {current_run_id}.")
+            return None
 
-    # 2. Create Sequences
-    print("--- Creating Sequences ---")
-    X_sequences, y_sequences = create_sequences(processed_data, targets, seq_len, pred_len)
-    print(f"X sequences shape: {X_sequences.shape}")
-    print(f"y sequences shape: {y_sequences.shape}")
-    print("--- Finished Creating Sequences ---")
+        logger.info(f"Loaded processed data shape: {processed_data_np.shape}, targets shape: {targets_np.shape}")
+        logger.info("--- Finished Loading Processed Data ---")
+        
+        # 2. Split data into train and test sets BEFORE creating sequences
+        logger.info(f"--- Splitting data into train/test (ratio: {train_ratio}) ---")
+        if len(processed_data_np) == 0:
+            logger.error("Processed data is empty, cannot split.")
+            return None
+        train_size = int(len(processed_data_np) * train_ratio)
+        if train_size < seq_len + pred_len : # Need enough data for at least one sequence
+            logger.error(f"Train size ({train_size}) is too small to create any sequences with seq_len={seq_len}, pred_len={pred_len}.")
+            return None
 
-    # 3. Train-test split
-    print("--- Splitting Data ---")
-    train_size = int(len(X_sequences) * train_ratio)
-    X_train = X_sequences[:train_size]
-    y_train = y_sequences[:train_size]
-    X_test = X_sequences[train_size:]
-    y_test = y_sequences[train_size:]
-    print(f"Train shapes: X={X_train.shape}, y={y_train.shape}")
-    print(f"Test shapes: X={X_test.shape}, y={y_test.shape}")
-    print("--- Finished Splitting Data ---")
+        train_features_raw = processed_data_np[:train_size]
+        test_features_raw = processed_data_np[train_size:]
+        train_targets_raw = targets_np[:train_size]
+        test_targets_raw = targets_np[train_size:]
+        logger.info(f"Raw train features shape: {train_features_raw.shape}, Raw test features shape: {test_features_raw.shape}")
 
-    # 4. Scale data
-    print("--- Scaling Data ---")
-    X_train_scaled, X_test_scaled, y_train_scaled, y_test_scaled, scalers_x, y_scalers = scale_data(
-        X_train, X_test, y_train, y_test, num_features, num_stocks
-    )
-    print("--- Finished Scaling Data ---")
+        # 3. Create sequences for training and test sets
+        logger.info("--- Creating sequences ---")
+        X_train, y_train = create_sequences(train_features_raw, train_targets_raw, seq_len, pred_len)
+        X_test, y_test = create_sequences(test_features_raw, test_targets_raw, seq_len, pred_len)
+        
+        if X_train.size == 0 or y_train.size == 0:
+            logger.error(f"Failed to create training sequences. X_train shape: {X_train.shape}, y_train shape: {y_train.shape}. Check data length and sequence parameters.")
+            return None
+        # X_test or y_test can be empty if test_features_raw is too short, which is acceptable.
+        if X_test.size == 0 and test_features_raw.size > 0 : # only log error if raw test data existed but no sequences were made
+            logger.warning(f"Test sequences (X_test) are empty. X_test shape: {X_test.shape}, y_test shape: {y_test.shape}. This might be due to short test data length.")
 
-    # 5. Save Scaled Data
-    print(f"--- Saving Scaled Data to {split_data_output_path} ---")
-    np.savez(
-        split_data_output_path,
-        X_train_scaled=X_train_scaled,
-        y_train_scaled=y_train_scaled,
-        X_test_scaled=X_test_scaled,
-        y_test_scaled=y_test_scaled
-    )
-    print("--- Finished Saving Scaled Data ---")
+        logger.info(f"Created sequences. X_train: {X_train.shape}, y_train: {y_train.shape}, X_test: {X_test.shape}, y_test: {y_test.shape}")
+        
+        # 4. Scale the data
+        num_stocks = X_train.shape[2] # X_train shape: (samples, seq_len, num_stocks, num_features)
+        num_features = X_train.shape[3]
+        
+        logger.info("--- Scaling data ---")
+        X_train_scaled, X_test_scaled, y_train_scaled, y_test_scaled, scalers_x, y_scalers = scale_data(
+            X_train, X_test, y_train, y_test, num_features, num_stocks
+        )
+        logger.info("Data scaling completed.")
 
-    # 6. Save Scalers
-    print(f"--- Saving Scalers to {scalers_output_path} ---")
-    with open(scalers_output_path, 'wb') as f:
-        pickle.dump({'scalers_x': scalers_x, 'y_scalers': y_scalers}, f)
-    print("--- Finished Saving Scalers ---")
+        # 5. Save Scaled Data to database, associated with current_run_id
+        logger.info(f"--- Saving Scaled Data to database for run_id: {current_run_id} ---")
+        save_scaled_features(db_config, current_run_id, 'X_train', X_train_scaled)
+        save_scaled_features(db_config, current_run_id, 'y_train', y_train_scaled)
+        if X_test_scaled.size > 0: # Only save if not empty
+            save_scaled_features(db_config, current_run_id, 'X_test', X_test_scaled)
+        if y_test_scaled.size > 0: # Only save if not empty
+            save_scaled_features(db_config, current_run_id, 'y_test', y_test_scaled)
+        logger.info("--- Finished Saving Scaled Data ---")
+
+        # 6. Save Scalers to database, associated with current_run_id
+        logger.info(f"--- Saving Scalers to database for run_id: {current_run_id} ---")
+        scalers_dict = {'scalers_x': scalers_x, 'y_scalers': y_scalers, 'tickers': tickers, 'num_features': num_features}
+        save_scalers(db_config, current_run_id, scalers_dict)
+        logger.info("--- Finished Saving Scalers ---")
+        
+        return current_run_id # Return the run_id to confirm success
+    
+    except Exception as e:
+        logger.error(f"Error in run_feature_building for run_id {run_id_arg}: {e}", exc_info=True)
+        return None
+
+#------------------------------------------------------
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--config', type=str, required=True, help='Path to the configuration file (params.yaml)')
+
+    parser = argparse.ArgumentParser(description="Feature building script for stock prediction.")
+    parser.add_argument(
+        '--config',
+        type=str,
+        default='config/params.yaml', # Assuming script run from project root
+        help='Path to the configuration file (e.g., config/params.yaml)'
+    )
+    parser.add_argument(
+        '--run_id',
+        type=str,
+        required=True, 
+        help='The run_id of the processed dataset (from processed_feature_data table) to use for feature building.'
+    )
     args = parser.parse_args()
-    run_feature_building(args.config)
+    config_path_arg = args.config
+    cli_run_id_arg = args.run_id # Use a distinct name for the CLI argument
+
+    # Resolve config path
+    config_path_resolved = Path(config_path_arg)
+    if not config_path_resolved.is_absolute():
+        if (Path.cwd() / config_path_resolved).exists():
+            config_path_resolved = (Path.cwd() / config_path_resolved).resolve()
+        elif (Path(__file__).parent.parent.parent / config_path_resolved).exists():
+            config_path_resolved = (Path(__file__).parent.parent.parent / config_path_resolved).resolve()
+        else:
+            logger.error(f"Configuration file not found: {config_path_arg}")
+            sys.exit(1)
+    
+    if not config_path_resolved.exists():
+        logger.error(f"Configuration file not found: {config_path_resolved}")
+        sys.exit(1)
+
+    logger.info(f"Starting feature building script with resolved config: {config_path_resolved} for run_id: {cli_run_id_arg}")
+
+    try:
+        # Basic validation of database config in params.yaml
+        with open(config_path_resolved, 'r') as f:
+            config = yaml.safe_load(f)
+            if 'database' not in config:
+                logger.error("Database configuration missing from params.yaml")
+                sys.exit(1)
+
+        # Call run_feature_building with the CLI-provided run_id
+        returned_run_id = run_feature_building(str(config_path_resolved), run_id_arg=cli_run_id_arg)
+        
+        if returned_run_id:
+            logger.info(f"Feature building completed successfully for run_id: {returned_run_id}")
+            print(f"FEATURE_BUILD_SUCCESS_RUN_ID:{returned_run_id}") # For Airflow or capture
+        else:
+            logger.error(f"Feature building failed for run_id: {cli_run_id_arg}. Check logs.")
+            sys.exit(1)
+            
+    except yaml.YAMLError as e_yaml:
+        logger.error(f"Error parsing configuration file {config_path_resolved}: {e_yaml}", exc_info=True)
+        sys.exit(1)
+    except Exception as e_main:
+        logger.error(f"Fatal error in feature building script for run_id {cli_run_id_arg}: {e_main}", exc_info=True)
+        sys.exit(1)
