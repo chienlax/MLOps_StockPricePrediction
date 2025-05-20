@@ -1,0 +1,168 @@
+name: CI/CD
+
+on:
+  push:
+    branches:
+      - main
+      - dev
+  pull_request:
+    branches: 
+      - main
+      - dev
+
+jobs:
+  build-and-test:
+    name: Build & Test
+    runs-on: ubuntu-latest
+
+    env:
+      PYTHON_VERSION: '3.11'
+    
+    steps:
+      # CHECKOUT CODE
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      # SETUP PYTHON ENVIRONMENT
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+      # INSTALL PYTHON DEPENDENCIES
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install flake8 black pytest psycopg2-binary apache-airflow
+      
+      # DUMP
+      - name: Display Python version
+        run: python --version
+      
+      # RUN UNIT TESTS
+      - name: Run unit tests
+        run: |
+          export PYTHONPATH=$(pwd):$(pwd)/src:$PYTHONPATH
+          pytest tests/unit
+
+      # VALIDATE AIRFLOW DAGS
+      - name: Validate Airflow DAG definitions
+        run: |
+          export AIRFLOW_HOME=$(pwd)/.ci_airflow_home 
+          mkdir -p $AIRFLOW_HOME
+          
+          echo "Initializing Airflow metadata database (temporary for CI)..."
+          airflow db migrate
+
+          export PYTHONPATH=$(pwd):$(pwd)/src:$PYTHONPATH
+          
+          echo "Attempting to list DAGs (initial parse check)..."
+          airflow dags list
+
+          echo "Individually testing DAG file Python syntax and Airflow import errors..."
+          FAIL_FLAG=0
+          find ./airflow/dags -name "*.py" -print0 | while IFS= read -r -d $'\0' dag_file; do
+            echo "--- Validating DAG file: $dag_file ---"
+           
+            if ! python -m ast "$dag_file"; then
+              echo "Python syntax ERROR in $dag_file"
+              FAIL_FLAG=1 
+            else
+              echo "Python syntax OK for $dag_file"
+              IMPORT_ERRORS=$(airflow dags list-import-errors --subdir "$dag_file" 2>&1) # Capture stdout and stderr
+              
+              if [[ -n "$IMPORT_ERRORS" && ! "$IMPORT_ERRORS" =~ "No import errors" && ! "$IMPORT_ERRORS" =~ "DAGS_FOLDER" && ! "$IMPORT_ERRORS" =~ "dag_id" ]]; then
+                echo "Airflow import ERRORS found in $dag_file:"
+                echo "$IMPORT_ERRORS"
+                FAIL_FLAG=1 
+              else
+                echo "No critical Airflow import errors detected for $dag_file (or only informational output)."
+              fi
+            fi
+            echo "--- Finished validating $dag_file ---"
+          done
+
+          if [ "$FAIL_FLAG" -eq 1 ]; then
+            echo "One or more DAG validation checks failed."
+            exit 1
+          fi
+          echo "All DAGs validated successfully."
+
+      # DETERMINE DOCKER IMAGE TAGS BASED ON BRANCH
+      - name: Determine Docker image tag suffix for floating tags
+        id: docker_meta_tags
+        run: |
+          TAG_SUFFIX="branch-${GITHUB_REF_NAME//\//-}"
+          if [ "${{ github.ref }}" == "refs/heads/main" ]; then
+            TAG_SUFFIX="latest"
+          elif [ "${{ github.ref }}" == "refs/heads/dev" ]; then
+            TAG_SUFFIX="dev"
+          fi
+          echo "Calculated tag suffix: $TAG_SUFFIX"
+          echo "tag_suffix=$TAG_SUFFIX" >> $GITHUB_OUTPUT
+    
+      # LOGIN TO DOCKER HUB
+      - name: Log in to Docker Hub
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')
+        uses: docker/login-action@v3
+        with:
+          username: ${{secrets.DOCKERHUB_USERNAME}} 
+          password: ${{secrets.DOCKERHUB_TOKEN}}    
+
+      # SET UP DOCKER BUILDX (for multi-platform builds and better caching)
+      - name: Set up Docker Buildx
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')
+        uses: docker/setup-buildx-action@v3
+
+      # BUILD AND PUSH MAIN APPLICATION DOCKER IMAGE
+      - name: Build and push Main App (Airflow) Docker image
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')
+        uses: docker/build-push-action@v5
+        with:
+          context: . 
+          file: ./Dockerfile 
+          push: true
+          tags: | 
+            ${{ secrets.DOCKERHUB_USERNAME }}/stockpred-app:${{ github.sha }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/stockpred-app:${{ steps.docker_meta_tags.outputs.tag_suffix }}
+          cache-from: type=gha 
+          cache-to: type=gha,mode=max 
+
+      # BUILD AND PUSH FRONTEND DOCKER IMAGE
+      - name: Build and push Frontend Docker image
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile.frontend 
+          push: true
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/stockpred-frontend:${{ github.sha }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/stockpred-frontend:${{ steps.docker_meta_tags.outputs.tag_suffix }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+
+  deploy:
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+      # Add your deployment steps here
+      - name: Deploy
+        run: echo "Deploying application..."
