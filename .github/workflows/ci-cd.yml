@@ -44,7 +44,7 @@ jobs:
       - name: Run unit tests
         run: |
           export PYTHONPATH=$(pwd):$(pwd)/src:$PYTHONPATH
-          pytest tests/unit
+          pytest tests/
 
       # VALIDATE AIRFLOW DAGS
       - name: Validate Airflow DAG definitions
