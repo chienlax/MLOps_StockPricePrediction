@@ -16,8 +16,8 @@ from pathlib import Path
 from typing import Optional
 from torch.utils.data import DataLoader, TensorDataset
 from datetime import datetime
-from model_definitions import StockLSTM, StockLSTMWithAttention, StockLSTMWithCrossStockAttention
-from evaluate_model import evaluate_model, visualize_predictions
+from .model_definitions import StockLSTM, StockLSTMWithAttention, StockLSTMWithCrossStockAttention
+from .evaluate_model import evaluate_model, visualize_predictions
 from src.utils.db_utils import (
     get_db_connection,
     load_scaled_features,
