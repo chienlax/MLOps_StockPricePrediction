@@ -9,7 +9,7 @@ import os
 import json
 from typing import Optional
 from sklearn.metrics import mean_absolute_error, mean_squared_error, mean_absolute_percentage_error
-from datetime import date, timedelta, datetime # Ensure all are imported
+from datetime import date, timedelta, datetime
 from pathlib import Path
 
 # Corrected import path for utils
@@ -40,10 +40,8 @@ def calculate_directional_accuracy(predicted_today: float, actual_today: float, 
     pred_change = predicted_today - actual_yesterday
     actual_change = actual_today - actual_yesterday
 
-    # If both predicted and actual prices are the same as yesterday's, it's a correct "flat" prediction.
     if pred_change == 0 and actual_change == 0:
         return 1.0
-    # If one predicts flat and the other moves, or if directions are opposite.
     if np.sign(pred_change) == np.sign(actual_change):
         return 1.0
     else:
@@ -54,44 +52,34 @@ def calculate_directional_accuracy(predicted_today: float, actual_today: float, 
 def run_monitoring(config_path: str) -> str:
     """
     Evaluates previous day's predictions, logs performance, and decides if retraining is needed.
-
-    Args:
-        config_path (str): Path to params.yaml.
-
-    Returns:
-        str: Task ID for Airflow branching (e.g., 'trigger_retraining_task' or 'no_retraining_task').
     """
-    params = {} # --- MODIFIED: Initialize params ---
+    params: dict = {} # Initialize params
+    # --- MODIFIED: Define default fallback task_id outside try block ---
+    default_fallback_task_id = 'no_retraining_needed_task_on_error'
     try:
         with open(config_path, 'r') as f:
             params = yaml.safe_load(f)
 
         db_config = params['database']
-        # Tickers to monitor - should align with what's being predicted
         tickers_to_monitor = params['data_loading']['tickers']
-
+        
         monitoring_cfg = params['monitoring']
         thresholds = monitoring_cfg['performance_thresholds']
         evaluation_lag_days = monitoring_cfg.get('evaluation_lag_days', 1)
 
         airflow_dag_cfg = params.get('airflow_dags', {})
-        retraining_task_id = airflow_dag_cfg.get('retraining_trigger_task_id', 'trigger_retraining_pipeline_task') # Task ID in daily DAG
+        retraining_task_id = airflow_dag_cfg.get('retraining_trigger_task_id', 'trigger_retraining_pipeline_task')
         no_retraining_task_id = airflow_dag_cfg.get('no_retraining_task_id', 'no_retraining_needed_task')
-        # --- ADDED: Default for error case if airflow_dags is missing ---
-        error_fallback_task_id = airflow_dag_cfg.get('no_retraining_task_id', 'no_retraining_needed_task_on_error')
+        # Use the value from params if available, otherwise use the hardcoded default
+        error_fallback_task_id = airflow_dag_cfg.get('no_retraining_needed_task_on_error', default_fallback_task_id)
 
 
         prediction_date_to_evaluate = date.today() - timedelta(days=evaluation_lag_days)
         prediction_date_str = prediction_date_to_evaluate.isoformat()
-
-        # For directional accuracy, we need actuals from one day prior to prediction_date_to_evaluate
-        # actuals_needed_end_date = prediction_date_to_evaluate # Not used
-        # actuals_needed_start_date = prediction_date_to_evaluate - timedelta(days=1) # Not used directly
-
+        
         logger.info(f"Monitoring performance for predictions made for date: {prediction_date_str}")
 
-        # 1. Fetch predictions made for the evaluation_date
-        predictions_data_from_db = {} # To store {ticker: {'predicted_price': val, 'model_mlflow_run_id': id}}
+        predictions_data_from_db = {}
         unique_model_run_ids_found = set()
 
         for ticker in tickers_to_monitor:
@@ -102,32 +90,30 @@ def run_monitoring(config_path: str) -> str:
                     unique_model_run_ids_found.add(pred_info['model_mlflow_run_id'])
             else:
                 logger.warning(f"No prediction found in database for {ticker} on target date {prediction_date_str}.")
-
+        
         if not predictions_data_from_db:
             logger.warning(f"No predictions retrieved from database for any ticker on target date {prediction_date_str}. Skipping performance monitoring.")
             return no_retraining_task_id
 
         if len(unique_model_run_ids_found) > 1:
             logger.warning(f"Multiple model_mlflow_run_ids found for predictions on {prediction_date_str}: {unique_model_run_ids_found}. Using the first one for overall log.")
-
+        
         model_mlflow_run_id_for_these_preds = list(unique_model_run_ids_found)[0] if unique_model_run_ids_found else None
-
+        
         if not model_mlflow_run_id_for_these_preds:
             logger.warning(f"Could not determine a model_mlflow_run_id for predictions on {prediction_date_str}. Performance log will be incomplete.")
 
-        # Fetch actual prices
         actual_prices_on_eval_date = {}
         actual_prices_on_prev_date = {}
-
+        
         conn_actuals = None
         try:
             conn_actuals = get_db_connection(db_config)
             cursor_actuals = conn_actuals.cursor() # type: ignore
             for ticker in tickers_to_monitor:
-                # Actual for evaluation date
                 cursor_actuals.execute(
                     "SELECT close FROM raw_stock_data WHERE ticker = %s AND date::date = %s",
-                    (ticker, prediction_date_to_evaluate) # Use date object here
+                    (ticker, prediction_date_to_evaluate)
                 )
                 result = cursor_actuals.fetchone()
                 if result: actual_prices_on_eval_date[ticker] = result[0]
@@ -141,7 +127,7 @@ def run_monitoring(config_path: str) -> str:
                 if result_prev: actual_prices_on_prev_date[ticker] = result_prev[0]
         finally:
             if conn_actuals:
-                if 'cursor_actuals' in locals() and cursor_actuals:
+                if 'cursor_actuals' in locals() and cursor_actuals: # type: ignore
                     cursor_actuals.close()
                 conn_actuals.close()
 
@@ -151,7 +137,7 @@ def run_monitoring(config_path: str) -> str:
         for ticker in tickers_to_monitor:
             pred_info = predictions_data_from_db.get(ticker)
             if not pred_info:
-                continue # Already logged warning if prediction was missing
+                continue
 
             predicted_price = pred_info.get('predicted_price')
             actual_price = actual_prices_on_eval_date.get(ticker)
@@ -163,7 +149,7 @@ def run_monitoring(config_path: str) -> str:
 
             metrics = {'ticker': ticker, 'prediction_date': prediction_date_str,
                        'predicted_price': predicted_price, 'actual_price': actual_price}
-            metrics['mae'] = mean_absolute_error([actual_price], [predicted_price]) # sklearn functions expect iterables
+            metrics['mae'] = mean_absolute_error([actual_price], [predicted_price])
             metrics['rmse'] = np.sqrt(mean_squared_error([actual_price], [predicted_price]))
             if actual_price != 0:
                 metrics['mape'] = mean_absolute_percentage_error([actual_price], [predicted_price])
@@ -171,26 +157,30 @@ def run_monitoring(config_path: str) -> str:
                 metrics['mape'] = np.nan
 
             metrics['direction_accuracy'] = calculate_directional_accuracy(predicted_price, actual_price, actual_prev_price) if actual_prev_price is not None else np.nan
-
-            logger.info(f"Metrics for {ticker} on {prediction_date_str}: MAPE={metrics['mape']:.4f if not pd.isna(metrics['mape']) else 'NaN'}, DirAcc={metrics['direction_accuracy'] if not pd.isna(metrics['direction_accuracy']) else 'N/A'}")
+            
+            # --- MODIFIED: Corrected f-string formatting ---
+            mape_str = f"{metrics['mape']:.4f}" if not pd.isna(metrics['mape']) else 'NaN'
+            dir_acc_str = f"{metrics['direction_accuracy']:.2f}" if not pd.isna(metrics['direction_accuracy']) else 'N/A' # .2f for percentage-like
+            logger.info(f"Metrics for {ticker} on {prediction_date_str}: MAPE={mape_str}, DirAcc={dir_acc_str}")
+            # --- END MODIFIED ---
+            
             all_metrics_calculated.append(metrics)
 
             model_run_id_to_log = model_mlflow_run_id_for_these_preds if model_mlflow_run_id_for_these_preds else pred_info.get('model_mlflow_run_id')
 
             save_daily_performance_metrics(db_config, prediction_date_str, ticker, metrics, model_run_id_to_log)
 
-            # Check thresholds
             if not pd.isna(metrics['mape']) and metrics['mape'] > thresholds.get('mape_max', float('inf')):
                 logger.warning(f"TRIGGER: {ticker} MAPE ({metrics['mape']:.4f}) exceeded threshold ({thresholds.get('mape_max')}).")
                 retrain_triggered_by_metric = True
             if not pd.isna(metrics['direction_accuracy']) and metrics['direction_accuracy'] < thresholds.get('direction_accuracy_min', float('-inf')):
-                logger.warning(f"TRIGGER: {ticker} Directional Accuracy ({metrics['direction_accuracy']:.4f}) below threshold ({thresholds.get('direction_accuracy_min')}).")
+                logger.warning(f"TRIGGER: {ticker} Directional Accuracy ({metrics['direction_accuracy']:.2f}) below threshold ({thresholds.get('direction_accuracy_min')}).") # .2f for consistency
                 retrain_triggered_by_metric = True
 
         if not all_metrics_calculated:
             logger.warning("No metrics were calculated for any ticker. Defaulting to no retraining.")
             return no_retraining_task_id
-
+            
         if retrain_triggered_by_metric:
             logger.info("Performance thresholds breached. Triggering retraining pipeline.")
             return retraining_task_id
@@ -200,10 +190,11 @@ def run_monitoring(config_path: str) -> str:
 
     except Exception as e:
         logger.error(f"Error in run_monitoring: {e}", exc_info=True)
-        # --- MODIFIED: Ensure error_fallback_task_id is defined if params itself is not loaded ---
-        if 'airflow_dags' in params and 'no_retraining_task_id' in params['airflow_dags']:
-            return params['airflow_dags'].get('no_retraining_task_id', 'no_retraining_needed_task_on_error')
-        return 'no_retraining_needed_task_on_error' # Default fallback
+        # --- MODIFIED: Use error_fallback_task_id defined earlier ---
+        # This also ensures 'params' doesn't cause UnboundLocalError if it wasn't loaded
+        if params and 'airflow_dags' in params and 'no_retraining_task_id' in params['airflow_dags']: # Check if params loaded
+            return params.get('airflow_dags', {}).get('no_retraining_needed_task_on_error', default_fallback_task_id)
+        return default_fallback_task_id
 
 # -------------------------------------------------------------------
 
