@@ -8,21 +8,20 @@ from pathlib import Path
 from sklearn.preprocessing import MinMaxScaler # For spec
 
 from models.evaluate_model import evaluate_model, visualize_predictions
+import logging # --- ADDED: To check log messages ---
 
 # --- Fixtures ---
 @pytest.fixture
 def mock_model_eval():
-    model = MagicMock(spec=nn.Module) # Mock a PyTorch model
-    model.eval = MagicMock() # Mock the eval method
-    # Mock the forward pass to return a predictable output
-    # Output shape: (batch_size, pred_len (1), num_stocks)
-    model.return_value = torch.tensor([[[0.5, 0.6]], [[0.7, 0.8]]], dtype=torch.float32) # Batch size 2, 2 stocks
+    model = MagicMock(spec=nn.Module)
+    model.eval = MagicMock() 
+    model.return_value = torch.tensor([[[0.5, 0.6]], [[0.7, 0.8]]], dtype=torch.float32)
     return model
 
 @pytest.fixture
 def mock_criterion_eval():
     criterion = MagicMock(spec=nn.MSELoss)
-    criterion.return_value = torch.tensor(0.1) # Mock loss value
+    criterion.return_value = torch.tensor(0.1)
     return criterion
 
 @pytest.fixture
@@ -60,10 +59,6 @@ class TestEvaluateModel:
         mock_model_eval.eval.assert_called_once() # Check model set to eval mode
         
         # Check model was called with data from loader
-        # mock_model_eval was called with X_batch from mock_test_loader_eval
-        # Need to access the args of the call to mock_model_eval
-        # Since model is callable, its __call__ is mocked.
-        # The first argument to __call__ is the input tensor.
         call_args_list = mock_model_eval.call_args_list
         assert len(call_args_list) == 1 # Called once for the single batch
         torch.testing.assert_close(call_args_list[0][0][0], mock_test_loader_eval[0][0].to(device_eval))
@@ -132,7 +127,7 @@ class TestVisualizePredictions:
         for i, ticker in enumerate(tickers):
             expected_plot_path = output_plot_dir / f'prediction_{ticker}.png'
             # Check savefig call
-            assert call(str(expected_plot_path)) in mock_plt.savefig.call_args_list
+            assert call(expected_plot_path) in mock_plt.savefig.call_args_list
             # Check mlflow log_artifact call
             assert call(str(expected_plot_path)) in mock_mlflow.log_artifact.call_args_list
 
@@ -149,8 +144,11 @@ class TestVisualizePredictions:
 
         mock_mlflow.log_artifact.side_effect = Exception("MLflow down")
 
-        visualize_predictions(predictions, targets, [mock_y_scalers_eval[0]], tickers, str(output_plot_dir))
+        # --- MODIFIED: Capture logs at WARNING level for the test ---
+        with caplog.at_level(logging.WARNING):
+            visualize_predictions(predictions, targets, [mock_y_scalers_eval[0]], tickers, str(output_plot_dir))
+        # --- END MODIFIED ---
         
-        assert "Warning: Could not log artifact" in caplog.text
+        assert "Could not log artifact" in caplog.text # --- MODIFIED: Check specific substring ---
         assert "MLflow down" in caplog.text
         mock_plt.savefig.assert_called_once() # Still tries to save
