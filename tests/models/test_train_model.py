@@ -90,10 +90,10 @@ class TestTrainFinalModel:
         mock_model_inst.to.return_value = mock_model_inst
         mock_model_inst.state_dict.return_value = {'param': torch.tensor(1.0)}
         mock_model_inst.load_state_dict = MagicMock()
-        mock_model_inst.return_value = torch.rand(sample_best_hyperparams_train['batch_size'], 1, 2)
-        mock_model_inst.parameters.return_value = [torch.nn.Parameter(torch.randn(1))] # For optimizer
-        
-        # Determine which mock model class should be used based on model_type
+        # *** MODIFIED: Ensure model output requires grad ***
+        mock_model_inst.return_value = torch.rand(sample_best_hyperparams_train['batch_size'], 1, 2, requires_grad=True)
+        mock_model_inst.parameters.return_value = [torch.nn.Parameter(torch.randn(1))]
+
         model_type = sample_best_hyperparams_train.get('model_type', 'lstm')
         if model_type == 'lstm':
             mock_lstm_basic.return_value = mock_model_inst
@@ -101,8 +101,8 @@ class TestTrainFinalModel:
             mock_lstm_att.return_value = mock_model_inst
         elif model_type == 'lstm_cross_attention':
             mock_lstm_cross.return_value = mock_model_inst
-
-
+        
+        # ... (rest of the test as previously corrected)
         dummy_X_batch = torch.rand(sample_best_hyperparams_train['batch_size'], 5, 2, 3)
         dummy_y_batch = torch.rand(sample_best_hyperparams_train['batch_size'], 1, 2)
         
@@ -120,8 +120,8 @@ class TestTrainFinalModel:
         mock_dataloader.side_effect = dataloader_side_effect
 
         mock_eval_model.return_value = (
-            np.random.rand(10,1,2), # preds
-            np.random.rand(10,1,2), # targets
+            np.random.rand(10,1,2), 
+            np.random.rand(10,1,2), 
             {'test_loss': 0.1, 'avg_mape': 0.05, 'avg_mse': 0.01, 'avg_direction_accuracy': 0.8}
         )
 
@@ -164,19 +164,21 @@ class TestTrainFinalModel:
         assert model_obj is mock_model_inst
         assert mlflow_run_id_out == "mock_mlflow_run_123"
 
+
     @patch('models.train_model.StockLSTM')
-    @patch('models.train_model.StockLSTMWithAttention') # Add other model types if needed
+    @patch('models.train_model.StockLSTMWithAttention')
     @patch('models.train_model.StockLSTMWithCrossStockAttention')
     @patch('models.train_model.DataLoader')
     @patch('models.train_model.mlflow')
     def test_train_final_model_no_test_set(self, mock_mlflow, mock_dataloader, 
-                                           mock_lstm_cross, mock_lstm_att, mock_lstm_basic, # Mocks for all model types
+                                           mock_lstm_cross, mock_lstm_att, mock_lstm_basic,
                                            sample_best_hyperparams_train, sample_scaled_data_train,
                                            mock_y_scalers_train, mock_tickers_train, device_eval,
                                            tmp_path, caplog):
         mock_model_inst = MagicMock(spec=nn.Module)
         mock_model_inst.to.return_value = mock_model_inst
-        mock_model_inst.return_value = torch.rand(32,1,2)
+        # *** MODIFIED: Ensure model output requires grad ***
+        mock_model_inst.return_value = torch.rand(32,1,2, requires_grad=True)
         mock_model_inst.parameters.return_value = [torch.nn.Parameter(torch.randn(1))]
 
         model_type = sample_best_hyperparams_train.get('model_type', 'lstm')
@@ -210,7 +212,7 @@ class TestTrainFinalModel:
             mock_eval.assert_not_called()
             mock_viz.assert_not_called()
         assert "Test data is empty or None." in caplog.text
-        assert "No test set evaluation performed" in caplog.text # Check actual log message
+        assert "No test set evaluation performed" in caplog.text
 
 
 # --- Tests for run_training ---
@@ -231,7 +233,7 @@ class TestRunTraining:
                                   sample_best_hyperparams_train, tmp_path):
         dataset_run_id = "final_train_data_run_001"
         config_file = tmp_path / "params_train.yaml"
-        config_file.write_text(yaml.dump(mock_params_config_train)) # Create file
+        config_file.write_text(yaml.dump(mock_params_config_train))
 
         mock_yaml_safe_load.return_value = mock_params_config_train
         mock_load_scaled.side_effect = lambda db, drun_id, set_name: sample_scaled_data_train.get(set_name)
@@ -243,9 +245,9 @@ class TestRunTraining:
         test_predictions_np = np.random.rand(10,1,2)
         mock_train_final.return_value = (
             trained_model_mock,
-            test_predictions_np, # test_predictions_np
-            {'avg_mape': 0.1},      # final_test_metrics
-            "mlflow_run_for_trained_model_xyz" # mlflow_model_run_id
+            test_predictions_np,
+            {'avg_mape': 0.1},
+            "mlflow_run_for_trained_model_xyz"
         )
         
         mock_mlflow_client_inst = MagicMock(spec=MlflowClient)
@@ -254,8 +256,7 @@ class TestRunTraining:
         mock_model_version = MagicMock(spec=MlflowModelVersion)
         mock_model_version.version = "3"
         mock_mlflow_client_inst.search_model_versions.return_value = [mock_model_version]
-        # mock_mlflow_client_inst.get_latest_versions.return_value = [] # If needed for archiving logic
-
+        
         result_mlflow_run_id = run_training(str(config_file), dataset_run_id)
 
         assert result_mlflow_run_id == "mlflow_run_for_trained_model_xyz"
@@ -265,7 +266,11 @@ class TestRunTraining:
         mock_load_opt_res.assert_called_once_with(mock_params_config_train['database'], dataset_run_id)
         
         mock_train_final.assert_called_once()
-        args_train_final, _ = mock_train_final.call_args
+        # *** MODIFIED: Correctly access call arguments ***
+        call_args_info = mock_train_final.call_args
+        assert call_args_info is not None, "train_final_model was not called"
+        args_train_final = call_args_info.args
+        
         assert args_train_final[0] == dataset_run_id
         assert args_train_final[1] == sample_best_hyperparams_train
         
