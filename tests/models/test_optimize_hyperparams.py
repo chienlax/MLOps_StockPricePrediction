@@ -63,6 +63,11 @@ def mock_trial():
     trial.suggest_categorical.return_value = 'lstm' # model_type
     return trial
 
+@pytest.fixture
+def device_eval():
+    """Provides a torch device for tests, defaulting to CPU."""
+    return torch.device("cpu")
+
 # --- Tests for objective function (Optuna trial) ---
 # COMPLEXITY NOTICE: Testing the 'objective' function thoroughly is hard because it
 # involves a mini training loop. We'll mock key parts of that loop.
@@ -75,8 +80,8 @@ class TestObjectiveFunction:
     def test_objective_calls_and_returns_loss(self, mock_data_loader, mock_evaluate_model,
                                               mock_lstm_cross, mock_lstm_att, mock_lstm_basic,
                                               mock_trial, sample_scaled_data_opt,
-                                              mock_y_scalers_opt, device_eval, mock_opt_params_config):
-        
+                                              mock_y_scalers_opt, device_eval, mock_opt_params_config): # device_eval is now a valid fixture
+
         # Setup mocks for the training loop components
         mock_model_instance = MagicMock(spec=nn.Module)
         mock_model_instance.to.return_value = mock_model_instance # for .to(device)
@@ -84,7 +89,7 @@ class TestObjectiveFunction:
         # Model output: (batch_size, 1, num_stocks)
         # Target shape: (batch_size, 1, num_stocks)
         # For batch_size 32 (from mock_trial), 2 stocks
-        mock_model_instance.return_value = torch.rand(32, 1, 2) 
+        mock_model_instance.return_value = torch.rand(32, 1, 2)
         mock_lstm_basic.return_value = mock_model_instance # If 'lstm' is chosen
 
         # Mock DataLoader to return a single batch
@@ -108,18 +113,18 @@ class TestObjectiveFunction:
         # Assertions
         mock_trial.suggest_int.assert_any_call('batch_size', 16, 128, step=16)
         mock_trial.suggest_categorical.assert_called_once_with('model_type', ['lstm', 'lstm_attention', 'lstm_cross_attention'])
-        
+
         mock_lstm_basic.assert_called_once() # Since 'lstm' was returned by suggest_categorical
         mock_model_instance.to.assert_called_with(device_eval)
-        
+
         assert mock_data_loader.call_count == 2 # Once for train, once for test
-        
+
         # Check that the model's forward pass (mock_model_instance()) was called during training
         # This depends on batch_size and epochs. Here, 1 batch per epoch, 3 epochs.
         assert mock_model_instance.call_count >= mock_opt_params_config['epochs'] # At least once per training epoch
 
         mock_evaluate_model.assert_called() # Should be called at least once per epoch
-        
+
         assert loss == 0.5 # Matches the mocked 'test_loss' from evaluate_model
 
 # --- Tests for run_optimization ---
@@ -136,7 +141,7 @@ class TestRunOptimization:
                                       mock_y_scalers_opt, tmp_path):
         run_id = "opt_run_001"
         config_file = tmp_path / "params_opt.yaml" # Not actually read due to yaml.safe_load mock
-        
+
         # Mock DB load calls
         mock_load_scaled.side_effect = lambda db_cfg, r_id, set_name: sample_scaled_data_opt[set_name]
         mock_load_scalers.return_value = {'y_scalers': mock_y_scalers_opt, 'tickers': ['T1','T2'], 'num_features':3}
@@ -154,14 +159,14 @@ class TestRunOptimization:
 
         mock_load_scaled.assert_any_call(mock_params_config_opt['database'], run_id, 'X_train')
         mock_load_scalers.assert_called_once_with(mock_params_config_opt['database'], run_id)
-        
+
         mock_create_study.assert_called_once_with(direction="minimize", pruner=pytest.ANY) # ANY for pruner instance
         mock_study_instance.optimize.assert_called_once() # Check that optimize was called
-        
+
         mock_save_opt_results.assert_called_once_with(
             mock_params_config_opt['database'], run_id, mock_study_instance.best_params
         )
-        
+
         # Check saving to file
         expected_json_path = Path(mock_params_config_opt['output_paths']['best_params_path'])
         # mock_path_mkdir.assert_called_with(parents=True, exist_ok=True) # This is for expected_json_path.parent
@@ -179,7 +184,7 @@ class TestRunOptimization:
 
         with patch('yaml.safe_load', return_value=mock_params_config_opt):
             best_params_out, run_id_out = run_optimization(str(tmp_path / "cfg.yaml"), run_id)
-        
+
         assert best_params_out is None
         assert run_id_out is None
         assert "Failed to load scaled training data" in caplog.text
@@ -214,7 +219,7 @@ class TestRunOptimization:
 
         with patch('yaml.safe_load', return_value=mock_params_config_opt):
             best_params_out, run_id_out = run_optimization(str(tmp_path / "cfg.yaml"), run_id)
-        
+
         assert best_params_out is None
         assert run_id_out is None
         assert "X_train_scaled has unexpected dimensions" in caplog.text
