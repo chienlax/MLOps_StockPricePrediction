@@ -10,6 +10,7 @@ import json
 from pathlib import Path
 import optuna
 import io
+from torch.utils.data import DataLoader as TorchDataLoader, TensorDataset as TorchTensorDataset
 
 from models.model_definitions import StockLSTM, StockLSTMWithAttention, StockLSTMWithCrossStockAttention
 from models.optimize_hyperparams import objective, run_optimization
@@ -70,8 +71,7 @@ class TestObjectiveFunction:
     @patch('models.optimize_hyperparams.StockLSTMWithAttention')
     @patch('models.optimize_hyperparams.StockLSTM')
     @patch('models.optimize_hyperparams.evaluate_model')
-    # --- MODIFIED: Correct patch target for DataLoader ---
-    @patch('models.optimize_hyperparams.DataLoader')
+    @patch('models.optimize_hyperparams.DataLoader') # Correct patch target
     def test_objective_calls_and_returns_loss(self, mock_data_loader_class, mock_evaluate_model,
                                               mock_stock_lstm_class, mock_stock_lstm_att_class, mock_stock_lstm_cross_class,
                                               mock_trial, sample_scaled_data_opt,
@@ -80,16 +80,12 @@ class TestObjectiveFunction:
         class SimpleDummyModel(nn.Module):
             def __init__(self):
                 super().__init__()
-                # Ensure input_features_flat matches X_train's feature dimensions flattened
-                # X_train: (batch, seq_len, num_stocks, num_features) -> (32, 5, 2, 3)
-                # input for linear: seq_len * num_stocks * num_features = 5 * 2 * 3 = 30
-                # output for linear: pred_len * num_stocks = 1 * 2 = 2 (assuming pred_len=1)
                 self.linear = nn.Linear(5 * 2 * 3, 1 * 2)
-            def forward(self, x): # x: (batch, seq, stocks, features)
+            def forward(self, x):
                 batch_size = x.shape[0]
-                x_flat = x.reshape(batch_size, -1) # Use reshape for contiguity if needed, or view
+                x_flat = x.reshape(batch_size, -1)
                 out_flat = self.linear(x_flat)
-                return out_flat.view(batch_size, 1, 2) # Assuming pred_len=1, num_stocks=2
+                return out_flat.view(batch_size, 1, 2)
 
         actual_model_instance = SimpleDummyModel().to(device_eval)
         mock_stock_lstm_class.return_value = actual_model_instance
@@ -99,15 +95,51 @@ class TestObjectiveFunction:
         X_test_tensor = torch.tensor(sample_scaled_data_opt['X_test'], device=device_eval)
         y_test_tensor = torch.tensor(sample_scaled_data_opt['y_test'], device=device_eval)
 
-        mock_train_loader_instance = iter([(X_train_tensor, y_train_tensor)])
-        mock_test_loader_instance = iter([(X_test_tensor, y_test_tensor)])
+        # --- MODIFIED: Correctly mock DataLoader instances ---
+        batch_size_from_trial = 32 # From mock_trial.suggest_int.side_effect[0]
 
-        # When DataLoader class is called, return our mock instances in order
-        mock_data_loader_class.side_effect = [
-            mock_train_loader_instance, # For train_loader
-            mock_test_loader_instance   # For test_loader
-        ]
+        # Mock for the train_loader object
+        mock_train_loader_obj = MagicMock(spec=TorchDataLoader)
+        mock_train_loader_obj.__iter__.return_value = iter([(X_train_tensor, y_train_tensor)])
+        num_train_samples = X_train_tensor.shape[0]
+        mock_train_loader_obj.__len__.return_value = (num_train_samples + batch_size_from_trial - 1) // batch_size_from_trial # num_batches
+
+        # Mock for the test_loader object
+        mock_test_loader_obj = MagicMock(spec=TorchDataLoader)
+        mock_test_loader_obj.__iter__.return_value = iter([(X_test_tensor, y_test_tensor)])
+        num_test_samples = X_test_tensor.shape[0]
+        mock_test_loader_obj.__len__.return_value = (num_test_samples + batch_size_from_trial - 1) // batch_size_from_trial # num_batches
+
+        # Mock for the dataset attribute of test_loader
+        mock_test_dataset_obj = MagicMock(spec=TorchTensorDataset)
+        mock_test_dataset_obj.__len__.return_value = num_test_samples
+        mock_test_loader_obj.dataset = mock_test_dataset_obj
         
+        # Mock for the dummy test_loader object (if X_test is empty)
+        mock_dummy_test_loader_obj = MagicMock(spec=TorchDataLoader)
+        empty_X_iter = torch.empty(0, X_train_tensor.shape[1], X_train_tensor.shape[2], X_train_tensor.shape[3], dtype=torch.float32)
+        empty_y_iter = torch.empty(0, y_train_tensor.shape[1], y_train_tensor.shape[2], dtype=torch.float32)
+        mock_dummy_test_loader_obj.__iter__.return_value = iter([]) # Empty iterator
+        mock_dummy_test_loader_obj.__len__.return_value = 0 # 0 batches
+
+        mock_dummy_test_dataset_obj = MagicMock(spec=TorchTensorDataset)
+        mock_dummy_test_dataset_obj.__len__.return_value = 0 # 0 samples
+        mock_dummy_test_loader_obj.dataset = mock_dummy_test_dataset_obj
+
+
+        # The objective function creates test_loader first, then train_loader.
+        if sample_scaled_data_opt['X_test'].size > 0 and sample_scaled_data_opt['y_test'].size > 0:
+            mock_data_loader_class.side_effect = [
+                mock_test_loader_obj,    # Returned when DataLoader for test_dataset is created
+                mock_train_loader_obj    # Returned when DataLoader for train_dataset is created
+            ]
+        else: # Fallback for if test data was empty, though current fixture has data
+             mock_data_loader_class.side_effect = [
+                mock_dummy_test_loader_obj,
+                mock_train_loader_obj
+            ]
+        # --- END MODIFIED DataLoader Mocks ---
+
         mock_evaluate_model.return_value = (None, None, {'test_loss': 0.5, 'avg_mape': 0.1})
 
         loss = objective(
@@ -121,31 +153,32 @@ class TestObjectiveFunction:
 
         mock_trial.suggest_int.assert_any_call('batch_size', 16, 128, step=16)
         mock_trial.suggest_categorical.assert_called_once_with('model_type', ['lstm', 'lstm_attention', 'lstm_cross_attention'])
-        
+
         mock_stock_lstm_class.assert_called_once()
-        
-        # DataLoader should be called twice: once for training, once for testing
+
         assert mock_data_loader_class.call_count == 2
-        
-        # Check calls to DataLoader instantiation
-        # First call is test_loader, second is train_loader based on code structure in `objective` (if X_test.size > 0)
-        # or first is train_loader, second is test_loader if conditions for test_loader creation are met first.
-        # Let's check the code in `objective`: test_loader is created first if X_test has data.
-        expected_calls_to_dataloader = []
-        # Test DataLoader call args
-        # The TensorDataset is created inline, so we use ANY for that part
-        if sample_scaled_data_opt['X_test'].size > 0: # Based on fixture data
-             expected_calls_to_dataloader.append(call(ANY, batch_size=32, shuffle=False)) # test_loader
-        else: # If test data was empty, the dummy loader would be created.
-             expected_calls_to_dataloader.append(call(ANY, batch_size=32, shuffle=False)) # dummy_test_loader
 
-        expected_calls_to_dataloader.append(call(ANY, batch_size=32, shuffle=True))  # train_loader
-        
-        mock_data_loader_class.assert_has_calls(expected_calls_to_dataloader, any_order=False)
+        # Check arguments to DataLoader constructor calls
+        expected_dataloader_calls = []
+        # First call in `objective` is for test_loader
+        if sample_scaled_data_opt['X_test'].size > 0 and sample_scaled_data_opt['y_test'].size > 0:
+            # ANY because TensorDataset is created inline with torch.tensor(X_test), etc.
+            expected_dataloader_calls.append(call(ANY, batch_size=batch_size_from_trial, shuffle=False))
+        else:
+            expected_dataloader_calls.append(call(ANY, batch_size=batch_size_from_trial, shuffle=False)) # Dummy
+        # Second call in `objective` is for train_loader
+        expected_dataloader_calls.append(call(ANY, batch_size=batch_size_from_trial, shuffle=True))
+        mock_data_loader_class.assert_has_calls(expected_dataloader_calls, any_order=False)
 
-
-        mock_evaluate_model.assert_called()
+        mock_evaluate_model.assert_called_once_with(
+            actual_model_instance,
+            mock_test_loader_obj if sample_scaled_data_opt['X_test'].size > 0 and sample_scaled_data_opt['y_test'].size > 0 else mock_dummy_test_loader_obj, # Ensure correct loader passed
+            ANY, # criterion
+            mock_y_scalers_opt,
+            device_eval
+        )
         assert loss == pytest.approx(0.5)
+
 
 # --- Tests for run_optimization ---
 class TestRunOptimization:
