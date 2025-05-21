@@ -21,8 +21,8 @@ database:
   dbname: 'airflow'
   user: 'airflow'
   password: 'airflow'
-  host: 'postgres'
-  port: '5432'
+  host: 'stockpred-postgres' # Docker service name
+  port: '5432' 
 
 monitoring:
   performance_thresholds:

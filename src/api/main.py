@@ -33,13 +33,21 @@ try:
         get_latest_prediction_for_all_tickers,
         get_all_distinct_tickers_from_predictions,
         get_latest_target_date_prediction_for_ticker,
-        get_raw_stock_data_for_period # THIS IMPORT IS CRITICAL
+        get_raw_stock_data_for_period, # THIS IMPORT IS CRITICAL
+        setup_database
     )
     with open(CONFIG_FILE_FOR_API, 'r') as f_params:
         params_config = yaml.safe_load(f_params)
     DB_CONFIG = params_config.get('database')
+
+
     if not DB_CONFIG:
         logger.error("CRITICAL API STARTUP: Database configuration not found in params.yaml.")
+    else:
+        setup_database(DB_CONFIG) # Ensure DB is set up before API starts
+        logger.info("Database setup completed successfully.")
+
+        
 except ImportError as e_imp:
     logger.error(f"CRITICAL API STARTUP: Could not import from utils.db_utils: {e_imp}", exc_info=True)
     DB_CONFIG = None 
