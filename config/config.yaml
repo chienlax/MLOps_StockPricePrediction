@@ -1,0 +1,5 @@
+mlflow:
+  experiment_name: "Stock_Price_Prediction_LSTM_Refactored"
+  tracking_uri: "http://mlflow-server:5000"
+
+  

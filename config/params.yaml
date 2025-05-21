@@ -22,7 +22,7 @@ database:
   user: 'airflow'
   password: 'airflow'
   host: 'stockpred-postgres' # Docker service name
-  port: '5432' 
+  port: '5432'
 
 monitoring:
   performance_thresholds:
@@ -57,5 +57,6 @@ mlflow:
   experiment_name: "Stock_Price_Prediction_LSTM_Refactored"
   final_run_name: "final_model_training"
   optuna_run_prefix: "optuna_trial_" # Prefix for Optuna runs
-  mlflow_uri: "http://mlflow-server:5000" # MLflow server URI (internal to Docker network)
+  mlflow_uri: "http://localhost:5000"  # For host machine access
   tracking_uri: "http://mlflow-server:5000" # MLflow tracking URI (internal to Docker network)
+
