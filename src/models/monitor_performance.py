@@ -114,7 +114,6 @@ def run_monitoring(config_path: str) -> str:
         
         if not model_mlflow_run_id_for_these_preds:
             logger.warning(f"Could not determine a model_mlflow_run_id for predictions on {prediction_date_str}. Performance log will be incomplete.")
-        # --- END MODIFIED ---
 
         # Fetch actual prices 
         actual_prices_on_eval_date = {}

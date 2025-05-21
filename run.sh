@@ -27,7 +27,7 @@ echo "Host directories verified/created."
 fn_print_usage() {
     echo "Usage: ./run.sh [ACTION]"
     echo "Actions:"
-    echo "  up           Builds (if needed) and starts all services in detached mode."
+    echo "  up           Builds (if needed) and starts all services in detached mode, and initializes Airflow DB/user."
     echo "  start        Starts all services in detached mode (assumes images are built)."
     echo "  logs         Follows logs from all services."
     echo "  logs <service_name>"
@@ -36,8 +36,7 @@ fn_print_usage() {
     echo "  down         Stops and removes all services, networks. Add -v to remove volumes."
     echo "  build        Builds or rebuilds services."
     echo "  ps           Lists running containers for this project."
-    echo "  init_airflow (DEPRECATED - Handled by Airflow's internal init)"
-    echo "               (This was for older Airflow versions to init the metadata DB)"
+    echo "  init_airflow (Specific Airflow DB initialization/user creation - often run automatically by 'up')"
     echo "  clean_pyc    Removes __pycache__ and .pyc files from the src directory."
     echo ""
     echo "Default action if none specified: up"
@@ -82,6 +81,35 @@ fn_clean_pyc() {
     echo "Python cache files cleaned."
 }
 
+fn_init_airflow_db_and_user() {
+    echo "--- Initializing Airflow Metadata Database and creating default user ---"
+    echo "This may take a moment as Airflow connects to the database..."
+
+    # Use the webserver container to run Airflow CLI commands.
+    # --rm: Remove the container after the command exits.
+    # --no-deps: Don't start linked services (they should already be up).
+
+    # 1. Initialize/Migrate Airflow's metadata database schema.
+    # For Airflow 2.x, 'db migrate' is the correct command for initial setup and schema updates.
+    # It will automatically create tables if they don't exist.
+    echo "Running 'airflow db migrate' to initialize/update database schema..."
+    $DOCKER_COMPOSE_CMD run --rm --no-deps airflow-webserver airflow db migrate
+
+    # 2. Create the default Airflow webserver user.
+    # '|| true' allows the script to continue even if the user already exists (e.g., on subsequent runs).
+    echo "Creating default Airflow user 'airflow' (password: 'airflow')..."
+    $DOCKER_COMPOSE_CMD run --rm --no-deps airflow-webserver airflow users create \
+        --username airflow \
+        --firstname airflow \
+        --lastname airflow \
+        --role Admin \
+        --email airflow@example.com \
+        --password airflow || true
+
+    echo "Airflow metadata database initialization and user creation completed."
+    echo "-------------------------------------------------------------------"
+}
+
 
 # --- Main Script Logic ---
 
@@ -98,6 +126,15 @@ case "$ACTION" in
         echo "Building and starting all services in detached mode..."
         $DOCKER_COMPOSE_CMD build
         $DOCKER_COMPOSE_CMD up -d
+
+        # After services are up, run the Airflow DB initialization and user creation
+        # We need to wait for postgres and webserver to be ready enough to run CLI commands.
+        # Docker compose's depends_on with service_healthy helps, but a small sleep can ensure readiness.
+        echo "Waiting a few seconds for Airflow services to become available..."
+        sleep 10 # Give Airflow containers a moment to start up and connect to DB
+
+        fn_init_airflow_db_and_user
+
         echo "Services starting. It might take a few minutes for Airflow and MLflow to be fully ready."
         echo "Airflow Webserver: http://localhost:8080 (default user/pass: airflow/airflow)"
         echo "MLflow UI: http://localhost:5001"
@@ -146,11 +183,8 @@ case "$ACTION" in
         echo "Listing running containers for this project..."
         $DOCKER_COMPOSE_CMD ps
         ;;
-    init_airflow)
-        echo "Airflow database initialization is now typically handled automatically by the Airflow entrypoint."
-        echo "If you are on a very old Airflow version or have specific needs, you might run:"
-        echo "$DOCKER_COMPOSE_CMD run --rm airflow-scheduler airflow db init"
-        echo "However, this is usually not required for modern Airflow versions (like 2.8+)."
+    init_airflow) # Now can be run manually if needed, but 'up' handles it.
+        fn_init_airflow_db_and_user
         ;;
     clean_pyc)
         fn_clean_pyc
