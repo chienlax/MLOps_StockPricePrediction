@@ -6,9 +6,9 @@ from unittest.mock import patch, MagicMock, call
 import numpy as np
 import pandas as pd
 import yaml
-from sklearn.preprocessing import MinMaxScaler 
-from datetime import datetime, timedelta, date 
-import io
+from sklearn.preprocessing import MinMaxScaler
+from datetime import datetime, timedelta, date
+import io # Needed for mocking file objects
 
 # Add src to sys.path
 PROJECT_ROOT_FOR_TESTS = Path(__file__).resolve().parents[2]
@@ -16,13 +16,13 @@ SRC_PATH = PROJECT_ROOT_FOR_TESTS / "src"
 if str(SRC_PATH) not in sys.path:
     sys.path.insert(0, str(SRC_PATH))
 
-from features import prepare_prediction_input
+from features import prepare_prediction_input 
 
 
 # --- Fixtures ---
 
 @pytest.fixture
-def mock_db_config_ppi():
+def mock_db_config_ppi(): # Suffix ppi for prepare_prediction_input
     return {
         'dbname': 'test_db_ppi',
         'user': 'test_user_ppi',
@@ -96,9 +96,9 @@ class TestRunPrepareInput:
     @patch('features.prepare_prediction_input.get_latest_raw_data_window')
     @patch('features.prepare_prediction_input.load_processed_features_from_db')
     @patch('features.prepare_prediction_input.load_scalers')
-    @patch('features.prepare_prediction_input.open') # --- MODIFIED TARGET: Patching module's open ---
+    @patch('features.prepare_prediction_input.open') # Patching module's open
     @patch('yaml.safe_load')
-    def test_run_prepare_input_success(self, mock_yaml_safe_load, mock_open, # Args added
+    def test_run_prepare_input_success(self, mock_yaml_safe_load, mock_open,
                                        mock_load_scalers, mock_load_proc_meta, mock_get_latest_raw,
                                        mock_add_ta, mock_mkdir, mock_np_save,
                                        mock_params_config_ppi, sample_scalers_data_ppi,
@@ -146,11 +146,13 @@ class TestRunPrepareInput:
         assert result_path_str is not None
         assert Path(result_path_str).exists() # Check if the mock save file path exists (as a Path object)
 
+    @patch('features.prepare_prediction_input.get_latest_raw_data_window') # ADDED: To mock next db call
+    @patch('features.prepare_prediction_input.load_processed_features_from_db') # ADDED: To mock next db call
     @patch('features.prepare_prediction_input.load_scalers')
-    @patch('features.prepare_prediction_input.open') # --- MODIFIED TARGET ---
-    @patch('yaml.safe_load') # Args added
-    def test_run_prepare_input_load_scalers_fails(self, mock_yaml_safe_load, mock_open, # Args added
-                                                  mock_load_scalers,
+    @patch('features.prepare_prediction_input.open') # Patching module's open
+    @patch('yaml.safe_load')
+    def test_run_prepare_input_load_scalers_fails(self, mock_yaml_safe_load, mock_open,
+                                                  mock_load_scalers, mock_load_proc_meta, mock_get_latest_raw, # Args order
                                                   mock_params_config_ppi, tmp_path, caplog):
         prod_model_run_id = "run_fail_scalers"
         output_dir = str(tmp_path)
@@ -159,8 +161,11 @@ class TestRunPrepareInput:
         # Configure mock_open and mock_yaml_safe_load
         mock_open.return_value.__enter__.return_value = MagicMock(spec=io.TextIOBase)
         mock_yaml_safe_load.return_value = mock_params_config_ppi
-
-        mock_load_scalers.return_value = None
+        
+        # Configure the mocks for this specific test
+        mock_load_scalers.return_value = None # This is the condition being tested
+        mock_load_proc_meta.return_value = {'feature_columns': ['Open'], 'tickers': ['TICKA']} # Provide valid data
+        mock_get_latest_raw.return_value = {} # Doesn't matter, won't be reached if load_scalers fails
 
         result = prepare_prediction_input.run_prepare_input(
             dummy_config_path, prod_model_run_id, output_dir
@@ -168,14 +173,19 @@ class TestRunPrepareInput:
         assert result is None
         # Check log message
         assert f"Could not load scalers_x for run_id: {prod_model_run_id}" in caplog.text
+        # Ensure only the first DB utility was called before failing
+        mock_load_scalers.assert_called_once_with(mock_params_config_ppi['database'], prod_model_run_id)
+        mock_load_proc_meta.assert_not_called() # Should not be called if load_scalers fails
+        mock_get_latest_raw.assert_not_called() # Should not be called
 
 
-    @patch('features.prepare_prediction_input.load_scalers')
+    @patch('features.prepare_prediction_input.get_latest_raw_data_window') # ADDED: To mock next db call
     @patch('features.prepare_prediction_input.load_processed_features_from_db')
-    @patch('features.prepare_prediction_input.open') # --- MODIFIED TARGET ---
+    @patch('features.prepare_prediction_input.load_scalers')
+    @patch('features.prepare_prediction_input.open') # Patching module's open
     @patch('yaml.safe_load')
-    def test_run_prepare_input_load_meta_fails(self, mock_yaml_safe_load, mock_open, # Args added
-                                               mock_load_proc_meta, mock_load_scalers,
+    def test_run_prepare_input_load_meta_fails(self, mock_yaml_safe_load, mock_open,
+                                               mock_load_scalers, mock_load_proc_meta, mock_get_latest_raw, # Args order
                                                mock_params_config_ppi, sample_scalers_data_ppi,
                                                tmp_path, caplog):
         prod_model_run_id = "run_fail_meta"
@@ -186,22 +196,29 @@ class TestRunPrepareInput:
         mock_open.return_value.__enter__.return_value = MagicMock(spec=io.TextIOBase)
         mock_yaml_safe_load.return_value = mock_params_config_ppi
 
-        mock_load_scalers.return_value = sample_scalers_data_ppi
-        mock_load_proc_meta.return_value = None
+        # Configure the mocks for this specific test
+        mock_load_scalers.return_value = sample_scalers_data_ppi # Provide valid data
+        mock_load_proc_meta.return_value = None # This is the condition being tested
+        mock_get_latest_raw.return_value = {} # Doesn't matter, won't be reached
 
         result = prepare_prediction_input.run_prepare_input(
             dummy_config_path, prod_model_run_id, output_dir
         )
         assert result is None
         assert f"Could not load feature_columns or tickers for run_id: {prod_model_run_id}" in caplog.text
+        # Ensure only the first two DB utilities were called before failing
+        mock_load_scalers.assert_called_once_with(mock_params_config_ppi['database'], prod_model_run_id)
+        mock_load_proc_meta.assert_called_once_with(mock_params_config_ppi['database'], prod_model_run_id)
+        mock_get_latest_raw.assert_not_called()
 
 
-    @patch('features.prepare_prediction_input.load_scalers')
+    @patch('features.prepare_prediction_input.get_latest_raw_data_window') # ADDED: To mock next db call
     @patch('features.prepare_prediction_input.load_processed_features_from_db')
-    @patch('features.prepare_prediction_input.open') # --- MODIFIED TARGET ---
+    @patch('features.prepare_prediction_input.load_scalers')
+    @patch('features.prepare_prediction_input.open') # Patching module's open
     @patch('yaml.safe_load')
-    def test_run_prepare_input_scaler_dimension_mismatch(self, mock_yaml_safe_load, mock_open, # Args added
-                                                         mock_load_proc_meta, mock_load_scalers,
+    def test_run_prepare_input_scaler_dimension_mismatch(self, mock_yaml_safe_load, mock_open,
+                                                         mock_load_scalers, mock_load_proc_meta, mock_get_latest_raw, # Args order
                                                          mock_params_config_ppi, tmp_path, caplog):
         prod_model_run_id = "run_fail_dim_mismatch"
         output_dir = str(tmp_path)
@@ -216,25 +233,32 @@ class TestRunPrepareInput:
         # Meta for 2 stocks, 3 features
         mismatched_meta = {'feature_columns': ['f1','f2','f3'], 'tickers': ['T1','T2']}
 
+        # Configure the mocks for this specific test
         mock_load_scalers.return_value = mismatched_scalers
         mock_load_proc_meta.return_value = mismatched_meta
+        mock_get_latest_raw.return_value = {} # Doesn't matter, won't be reached
 
         result = prepare_prediction_input.run_prepare_input(
             dummy_config_path, prod_model_run_id, output_dir
         )
         assert result is None
         assert "Mismatch in dimensions of loaded scalers_x" in caplog.text
+        # Assertions to ensure calls up to the point of failure
+        mock_load_scalers.assert_called_once_with(mock_params_config_ppi['database'], prod_model_run_id)
+        mock_load_proc_meta.assert_called_once_with(mock_params_config_ppi['database'], prod_model_run_id)
+        mock_get_latest_raw.assert_not_called()
 
 
-    @patch('features.prepare_prediction_input.load_scalers')
-    @patch('features.prepare_prediction_input.load_processed_features_from_db')
+    @patch('features.prepare_prediction_input.add_technical_indicators') # ADDED: To mock subsequent function
     @patch('features.prepare_prediction_input.get_latest_raw_data_window')
-    @patch('features.prepare_prediction_input.open') # --- MODIFIED TARGET ---
+    @patch('features.prepare_prediction_input.load_processed_features_from_db') # ADDED: To mock next db call
+    @patch('features.prepare_prediction_input.load_scalers')
+    @patch('features.prepare_prediction_input.open') # Patching module's open
     @patch('yaml.safe_load')
-    def test_run_prepare_input_get_raw_data_fails(self, mock_yaml_safe_load, mock_open, # Args added
-                                                  mock_get_latest_raw, mock_load_proc_meta,
-                                                  mock_load_scalers, mock_params_config_ppi,
-                                                  sample_scalers_data_ppi, sample_processed_features_meta_ppi,
+    def test_run_prepare_input_get_raw_data_fails(self, mock_yaml_safe_load, mock_open,
+                                                  mock_load_scalers, mock_load_proc_meta, mock_get_latest_raw, mock_add_ta, # Args order
+                                                  mock_params_config_ppi, sample_scalers_data_ppi,
+                                                  sample_processed_features_meta_ppi,
                                                   tmp_path, caplog):
         prod_model_run_id = "run_fail_raw"
         output_dir = str(tmp_path)
@@ -244,26 +268,34 @@ class TestRunPrepareInput:
         mock_open.return_value.__enter__.return_value = MagicMock(spec=io.TextIOBase)
         mock_yaml_safe_load.return_value = mock_params_config_ppi
 
+        # Configure the mocks for this specific test
         mock_load_scalers.return_value = sample_scalers_data_ppi
         mock_load_proc_meta.return_value = sample_processed_features_meta_ppi
-        mock_get_latest_raw.return_value = {} # No data fetched
+        mock_get_latest_raw.return_value = {} # This is the condition being tested (no data fetched)
+        mock_add_ta.return_value = {} # Will not be called if get_latest_raw_data_window fails
 
         result = prepare_prediction_input.run_prepare_input(
             dummy_config_path, prod_model_run_id, output_dir
         )
         assert result is None
         assert "Failed to fetch any latest raw data" in caplog.text
+        # Assertions to ensure calls up to the point of failure
+        mock_load_scalers.assert_called_once_with(mock_params_config_ppi['database'], prod_model_run_id)
+        mock_load_proc_meta.assert_called_once_with(mock_params_config_ppi['database'], prod_model_run_id)
+        mock_get_latest_raw.assert_called_once()
+        mock_add_ta.assert_not_called()
 
 
-    @patch('features.prepare_prediction_input.load_scalers')
-    @patch('features.prepare_prediction_input.load_processed_features_from_db')
+    @patch('features.prepare_prediction_input.add_technical_indicators') # ADDED: To mock subsequent function
     @patch('features.prepare_prediction_input.get_latest_raw_data_window')
-    @patch('features.prepare_prediction_input.open') # --- MODIFIED TARGET ---
+    @patch('features.prepare_prediction_input.load_processed_features_from_db') # ADDED: To mock next db call
+    @patch('features.prepare_prediction_input.load_scalers')
+    @patch('features.prepare_prediction_input.open') # Patching module's open
     @patch('yaml.safe_load')
-    def test_run_prepare_input_missing_ticker_data(self, mock_yaml_safe_load, mock_open, # Args added
-                                                   mock_get_latest_raw, mock_load_proc_meta,
-                                                   mock_load_scalers, mock_params_config_ppi,
-                                                   sample_scalers_data_ppi, sample_processed_features_meta_ppi,
+    def test_run_prepare_input_missing_ticker_data(self, mock_yaml_safe_load, mock_open,
+                                                   mock_load_scalers, mock_load_proc_meta, mock_get_latest_raw, mock_add_ta, # Args order
+                                                   mock_params_config_ppi, sample_scalers_data_ppi,
+                                                   sample_processed_features_meta_ppi,
                                                    sample_latest_raw_data_dict_ppi, tmp_path, caplog):
         prod_model_run_id = "run_fail_missing_ticker"
         output_dir = str(tmp_path)
@@ -279,21 +311,29 @@ class TestRunPrepareInput:
         # Simulate raw data fetched only for TICKA
         raw_data_missing_one_ticker = {'TICKA': sample_latest_raw_data_dict_ppi['TICKA']}
         mock_get_latest_raw.return_value = raw_data_missing_one_ticker
+        
+        # Configure add_ta if it were called
+        mock_add_ta.return_value = {} # Default if not called
 
         result = prepare_prediction_input.run_prepare_input(
             dummy_config_path, prod_model_run_id, output_dir
         )
         assert result is None
         assert "Raw data for ticker TICKB (expected by production model) is missing or empty" in caplog.text
+        # Assertions to ensure calls up to the point of failure
+        mock_load_scalers.assert_called_once_with(mock_params_config_ppi['database'], prod_model_run_id)
+        mock_load_proc_meta.assert_called_once_with(mock_params_config_ppi['database'], prod_model_run_id)
+        mock_get_latest_raw.assert_called_once()
+        mock_add_ta.assert_called_once() # Should be called before this specific error is caught
 
 
     @patch('features.prepare_prediction_input.add_technical_indicators')
     @patch('features.prepare_prediction_input.get_latest_raw_data_window')
     @patch('features.prepare_prediction_input.load_processed_features_from_db')
     @patch('features.prepare_prediction_input.load_scalers')
-    @patch('features.prepare_prediction_input.open') # --- MODIFIED TARGET ---
+    @patch('features.prepare_prediction_input.open') # Patching module's open
     @patch('yaml.safe_load')
-    def test_run_prepare_input_not_enough_timesteps(self, mock_yaml_safe_load, mock_open, # Args added
+    def test_run_prepare_input_not_enough_timesteps(self, mock_yaml_safe_load, mock_open,
                                                     mock_load_scalers, mock_load_proc_meta, mock_get_latest_raw,
                                                     mock_add_ta,
                                                     mock_params_config_ppi, sample_scalers_data_ppi,

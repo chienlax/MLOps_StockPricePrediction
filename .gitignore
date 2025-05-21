@@ -97,3 +97,4 @@ Thumbs.db
 docker-compose.override.ymlairflow/logs/
 
 airflow/logs/
+req.txt
