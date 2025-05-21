@@ -1,0 +1,32 @@
+{
+    "name": "MLOps Airflow Scheduler (Debug as root)",
+    "dockerComposeFile": ["../docker-compose.yml"], // Path from .devcontainer/ to docker-compose.yml
+    "service": "airflow-scheduler",                 // The service in docker-compose.yml to target
+    "workspaceFolder": "/opt/airflow",              // The folder to open in VS Code inside the container
+    "remoteUser": "root",                           // Connect AS the root user inside the container
+
+    // Optional: Customize VS Code settings and extensions for this dev container
+    "customizations": {
+        "vscode": {
+            "settings": {
+                // Example: Tell VS Code which Python interpreter to use by default inside the container
+                "python.defaultInterpreterPath": "/usr/local/bin/python"
+                // Add any other container-specific VS Code settings here
+            },
+            "extensions": [
+                "ms-python.python",         // Essential Python extension
+                "ms-python.vscode-pylance"  // Richer IntelliSense for Python
+                // Add other VS Code extensions you want available in the dev container
+            ]
+        }
+    }
+
+    // Optional: Forward ports if you want to access services running in the container directly from your host browser
+    // "forwardPorts": [
+    //     8080, // Airflow Webserver (if you were targeting that service and it runs on 8080 in container)
+    //     5001  // MLflow Server (if it runs on 5000 in container, and you map 5001 on host)
+    // ],
+
+    // Optional: Commands to run after the container is created but before VS Code attaches
+    // "postCreateCommand": "echo 'Dev container created!'"
+}

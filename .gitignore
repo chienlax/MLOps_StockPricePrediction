@@ -94,4 +94,6 @@ Thumbs.db
 # webserver_config.py
 
 # Docker cache/build related
-docker-compose.override.yml
+docker-compose.override.ymlairflow/logs/
+
+airflow/logs/
