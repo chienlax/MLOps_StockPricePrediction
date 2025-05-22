@@ -2,7 +2,7 @@
 import sys
 from pathlib import Path
 import pytest
-from unittest.mock import patch, MagicMock, call, ANY
+from unittest.mock import patch, MagicMock, call, ANY, mock_open # Added mock_open for completeness if needed
 import numpy as np
 import yaml
 import json
@@ -19,48 +19,51 @@ SRC_PATH = PROJECT_ROOT_FOR_TESTS / "src"
 if str(SRC_PATH) not in sys.path:
     sys.path.insert(0, str(SRC_PATH))
 
-from models import predict_model
+from models import predict_model # Now predict_model can be imported
 
-# Universal Path mock factory
+# Placed at the module level for clarity
 def mock_path_factory_universal(path_arg_str_or_mock):
-    # Convert argument to a string
     current_path_str = str(path_arg_str_or_mock)
+    path_mock = MagicMock(spec=Path) # Make it behave like a Path object
 
-    path_mock = MagicMock(spec=Path)
-    
-    # Configure methods that return string representations or Path-like objects
     path_mock.__str__ = MagicMock(return_value=current_path_str)
-    path_mock.__fspath__ = MagicMock(return_value=current_path_str)
+    path_mock.__fspath__ = MagicMock(return_value=current_path_str) # Crucial for open()
     path_mock.resolve.return_value = path_mock
-
-    # Configure file/directory status methods - default behavior
     path_mock.exists.return_value = True
-    path_mock.is_file.return_value = True
-    path_mock.is_dir.return_value = True
+    path_mock.is_file.return_value = True # Assume it's a file if checked
+    path_mock.is_dir.return_value = True  # Assume it's a dir if checked
     
-    path_mock.mkdir = MagicMock(return_value=None)
+    # For path_mock.mkdir(parents=True, exist_ok=True)
+    path_mock.mkdir = MagicMock() 
 
-    # Configure parent mock
-    if current_path_str == str(Path(current_path_str).parent):
-        mock_parent = path_mock  # Parent of root is root
+    # Parent handling:
+    # The parent mock must also have a functional mkdir, and exists=True
+    mock_parent = MagicMock(spec=Path)
+    # Use real Path to determine parent string.
+    # Handle root case to avoid issues, though less likely with tmp_path
+    if Path(current_path_str) == Path(current_path_str).parent:
+        parent_str = current_path_str # Parent of root is root itself
     else:
         parent_str = str(Path(current_path_str).parent)
-        mock_parent = MagicMock(spec=Path)
-        mock_parent.__str__ = MagicMock(return_value=parent_str)
-        mock_parent.__fspath__ = MagicMock(return_value=parent_str)
-        mock_parent.mkdir = MagicMock(return_value=None)
-        mock_parent.exists.return_value = True
+    
+    mock_parent.__str__ = MagicMock(return_value=parent_str)
+    mock_parent.__fspath__ = MagicMock(return_value=parent_str)
+    mock_parent.mkdir = MagicMock() # Crucial for path_obj.parent.mkdir(parents=True, exist_ok=True)
+    mock_parent.exists.return_value = True
     path_mock.parent = mock_parent
     
-    # Configure the __truediv__ method (for the / operator)
     def truediv_handler(segment_to_join):
-        base_path_for_join = str(path_mock)
+        base_path_for_join = str(path_mock) 
         new_combined_path_str = str(Path(base_path_for_join) / segment_to_join)
         return mock_path_factory_universal(new_combined_path_str)
 
     path_mock.__truediv__ = MagicMock(side_effect=truediv_handler)
     
+    # If your SUT uses path_obj.open() instead of global open(path_obj, ...)
+    # path_mock.open = mock_open() # from unittest.mock
+
     return path_mock
+
 
 @pytest.fixture
 def mock_db_config_pred():
@@ -74,6 +77,7 @@ def mock_mlflow_config_pred():
 
 @pytest.fixture
 def mock_output_paths_pred(tmp_path):
+    # This fixture provides a string path, which is correct for params config
     return {'predictions_dir': str(tmp_path / 'test_predictions')}
 
 @pytest.fixture
@@ -81,7 +85,7 @@ def mock_params_config_pred(mock_db_config_pred, mock_mlflow_config_pred, mock_o
     return {
         'database': mock_db_config_pred,
         'mlflow': mock_mlflow_config_pred,
-        'output_paths': mock_output_paths_pred
+        'output_paths': mock_output_paths_pred # This will contain the real tmp_path string
     }
 
 @pytest.fixture
@@ -117,29 +121,28 @@ def mock_mlflow_client_pred(mock_prod_model_train_dataset_run_id):
     return client
 
 class TestRunDailyPrediction:
-    @patch('models.predict_model.yaml.safe_load')
-    @patch('models.predict_model.mlflow')
-    @patch('models.predict_model.MlflowClient') 
-    @patch('models.predict_model.load_scalers')
-    @patch('models.predict_model.load_processed_features_from_db')
-    @patch('models.predict_model.np.load')
-    @patch('models.predict_model.torch')
-    @patch('models.predict_model.Path') 
-    @patch('models.predict_model.json.dump')
-    @patch('models.predict_model.save_prediction')
+    # Decorators are applied from bottom up. Arguments are passed in reverse order of decorators.
     @patch('models.predict_model.date')
-    def test_run_daily_prediction_success(self, mock_date, mock_save_pred, mock_json_dump, MockPath,
-                                          mock_torch, mock_np_load, mock_load_proc_meta, mock_load_scalers,
-                                          MockMlflowClientClass, mock_mlflow_module,
-                                          mock_yaml_safe_load,
-                                          mock_params_config_pred, sample_input_sequence_np,
+    @patch('models.predict_model.save_prediction')
+    @patch('models.predict_model.json.dump')
+    @patch('models.predict_model.Path') 
+    @patch('models.predict_model.torch')
+    @patch('models.predict_model.np.load')
+    @patch('models.predict_model.load_processed_features_from_db') # Not used in success, but kept for consistency if logic changes
+    @patch('models.predict_model.load_scalers')
+    @patch('models.predict_model.MlflowClient') 
+    @patch('models.predict_model.mlflow')
+    @patch('models.predict_model.yaml.safe_load')
+    def test_run_daily_prediction_success(self, mock_yaml_safe_load, mock_mlflow_module, MockMlflowClientClass,
+                                          mock_load_scalers, mock_load_proc_meta, mock_np_load, mock_torch, 
+                                          MockPath, mock_json_dump, mock_save_pred, mock_date,
+                                          mock_params_config_pred, sample_input_sequence_np, # Fixtures
                                           mock_y_scalers_pred, mock_tickers_pred,
                                           mock_prod_model_train_dataset_run_id,
-                                          mock_mlflow_client_pred, tmp_path):
+                                          mock_mlflow_client_pred, tmp_path): # Fixtures
 
-        # Use the universal path factory instead of custom side effect
         MockPath.side_effect = mock_path_factory_universal
-
+    
         config_file = tmp_path / "params_pred.yaml"
         config_file.write_text(yaml.dump(mock_params_config_pred))
         
@@ -155,27 +158,25 @@ class TestRunDailyPrediction:
 
         mock_model_instance = MagicMock(spec=torch.nn.Module)
         mock_model_instance.eval = MagicMock()
-        raw_model_output = torch.tensor([[[0.5, 0.6]]], dtype=torch.float32)
+        raw_model_output = torch.tensor([[[0.5, 0.6]]], dtype=torch.float32) # Real tensor for output
         mock_model_instance.return_value = raw_model_output
         mock_mlflow_module.pytorch.load_model.return_value = mock_model_instance
-        mock_model_instance.to.return_value = mock_model_instance 
+        mock_model_instance.to.return_value = mock_model_instance
 
         mock_load_scalers.return_value = {'y_scalers': mock_y_scalers_pred, 'tickers': mock_tickers_pred}
         mock_np_load.return_value = sample_input_sequence_np
 
         real_cpu_device = torch.device('cpu')
         mock_torch.device.return_value = real_cpu_device
-
-        # Ensure that mock_torch.float32 returns the actual torch.float32 type
-        mock_torch.float32 = torch.float32
-        mock_torch.tensor.side_effect = lambda data, dtype: torch.tensor(data, dtype=dtype)
+        mock_torch.float32 = torch.float32 
+        mock_torch.tensor.side_effect = lambda data, dtype: torch.tensor(data, dtype=dtype) 
 
         mock_torch.no_grad.return_value.__enter__.return_value = None
         mock_torch.isnan.return_value.any.return_value = False
 
         fixed_today = date(2023, 1, 11)
         mock_date.today.return_value = fixed_today
-        today_iso = fixed_today.isoformat()
+        # today_iso = fixed_today.isoformat() # Not directly used for assertion here
 
         success = predict_model.run_daily_prediction(
             str(config_file), str(input_seq_path), prod_model_uri, prod_model_name, prod_model_version
@@ -184,21 +185,67 @@ class TestRunDailyPrediction:
         assert success is True
         mock_mlflow_module.pytorch.load_model.assert_called_once_with(model_uri=prod_model_uri)
         
-        mock_torch.tensor.assert_called_once_with(sample_input_sequence_np, dtype=torch.float32)
+        # Check torch.tensor call (the first positional arg is sample_input_sequence_np, second is dtype)
+        # We check that the first argument to torch.tensor was the numpy array.
+        # The actual comparison needs to be careful with numpy arrays.
+        # Using ANY for the numpy array if direct comparison is tricky due to object identity.
+        # However, since mock_np_load.return_value is sample_input_sequence_np, it should be the same object.
+        call_args_list = mock_torch.tensor.call_args_list
+        assert len(call_args_list) > 0 # Ensure it was called
+        # Check the first call. SUT calls torch.tensor(numpy_array, dtype=torch.float32)
+        first_call_args, first_call_kwargs = call_args_list[0]
+        assert np.array_equal(first_call_args[0], sample_input_sequence_np)
+        assert first_call_kwargs['dtype'] == torch.float32
+
         mock_model_instance.to.assert_called_with(real_cpu_device)
-  
+        
+        # Check that np.load was called with the Path object created by the SUT for input_seq_path
+        # mock_np_load.call_args[0][0] is the argument to np.load
+        # It should be a string that matches str(input_seq_path)
+        # The mock_path_factory makes it a mock, so its __str__ should return the path string
         mock_np_load.assert_called_once()
-        assert mock_np_load.call_args[0][0].__str__() == str(input_seq_path)
+        loaded_path_arg = mock_np_load.call_args[0][0]
+        assert str(loaded_path_arg) == str(input_seq_path)
+
+        # Check save_prediction call
+        mock_save_pred.assert_called() # Check it was called
+        # Example: mock_save_pred.assert_any_call(ANY, 'TICKA', ANY, ANY, ANY, 50.0, ANY)
+
+        # Check json.dump call for latest_predictions.json
+        # The first argument to json.dump is the data, the second is the file object.
+        # The file object comes from open(latest_file_path, 'w+')
+        # We need to ensure the path used for open() was correct.
+        # The path construction in SUT is:
+        # predictions_dir = Path(params['output_paths']['predictions_dir'])
+        # latest_file_path = predictions_dir / "latest_predictions.json"
+        # historical_file_path = predictions_dir / f"{today_iso}_predictions.json"
+
+        expected_predictions_dir_str = mock_params_config_pred['output_paths']['predictions_dir']
+        
+        # Check call to json.dump (assume only one for latest_predictions.json)
+        # The second argument to dump is a file-like object. We can't easily check its path from here
+        # without more complex mocking of `open`. However, the FileNotFoundError fix 
+        # for parent.mkdir implies the path resolution itself is working.
+        mock_json_dump.assert_called_once() 
+        # Verify the content written to json for latest_predictions
+        dumped_data = mock_json_dump.call_args[0][0]
+        assert 'TICKA' in dumped_data
+        assert 'TICKB' in dumped_data
+        assert dumped_data['TICKA'] == 50.0 
+        # Note: floating point comparisons might need pytest.approx
+        assert dumped_data['TICKB'] == pytest.approx(120.00000762939453)
 
 
-    @patch('models.predict_model.yaml.safe_load')
-    @patch('models.predict_model.mlflow')
     @patch('models.predict_model.Path') 
-    def test_run_daily_prediction_load_model_fails(self, MockPath, mock_mlflow_module, mock_yaml_safe_load,
+    @patch('models.predict_model.mlflow')
+    @patch('models.predict_model.yaml.safe_load')
+    def test_run_daily_prediction_load_model_fails(self, mock_yaml_safe_load, mock_mlflow_module, MockPath,
                                                    mock_params_config_pred, tmp_path, caplog):
+        MockPath.side_effect = mock_path_factory_universal # Use the robust factory
+        # MockPath.return_value.exists.return_value = True # Factory handles this
+        
         config_file = tmp_path/"cfg_lm_fail.yaml"
         config_file.write_text(yaml.dump(mock_params_config_pred))
-        MockPath.return_value.exists.return_value = True 
 
         mock_yaml_safe_load.return_value = mock_params_config_pred
         mock_mlflow_module.pytorch.load_model.side_effect = Exception("Model load error")
@@ -209,18 +256,22 @@ class TestRunDailyPrediction:
         assert success is False
         assert "Failed to load model from uri" in caplog.text
 
-    @patch('models.predict_model.yaml.safe_load')
-    @patch('models.predict_model.mlflow')
-    @patch('models.predict_model.MlflowClient') 
+
     @patch('models.predict_model.Path')
-    def test_run_daily_prediction_get_mlflow_metadata_fails(self, MockPath, MockMlflowClientClass, mock_mlflow_module,
-                                                            mock_yaml_safe_load, mock_params_config_pred, tmp_path, caplog):
+    @patch('models.predict_model.MlflowClient') 
+    @patch('models.predict_model.mlflow')
+    @patch('models.predict_model.yaml.safe_load')
+    def test_run_daily_prediction_get_mlflow_metadata_fails(self, mock_yaml_safe_load, mock_mlflow_module, 
+                                                            MockMlflowClientClass, MockPath, 
+                                                            mock_params_config_pred, tmp_path, caplog):
+        MockPath.side_effect = mock_path_factory_universal
+        # MockPath.return_value.exists.return_value = True # Factory handles this
+        
         config_file = tmp_path/"cfg_meta_fail.yaml"
         config_file.write_text(yaml.dump(mock_params_config_pred))
-        MockPath.return_value.exists.return_value = True
 
         mock_yaml_safe_load.return_value = mock_params_config_pred
-        mock_mlflow_module.pytorch.load_model.return_value = MagicMock()
+        mock_mlflow_module.pytorch.load_model.return_value = MagicMock() # Model loads fine
         MockMlflowClientClass.return_value.get_model_version.side_effect = Exception("MLflow metadata error")
 
         success = predict_model.run_daily_prediction(
@@ -229,22 +280,26 @@ class TestRunDailyPrediction:
         assert success is False
         assert "Error fetching metadata for production model" in caplog.text
 
-    @patch('models.predict_model.yaml.safe_load')
-    @patch('models.predict_model.mlflow')
-    @patch('models.predict_model.MlflowClient') 
-    @patch('models.predict_model.load_scalers')
+
     @patch('models.predict_model.Path')
-    def test_run_daily_prediction_load_scalers_fails(self, MockPath, mock_load_scalers, MockMlflowClientClass,
-                                                     mock_mlflow_module, mock_yaml_safe_load, mock_params_config_pred,
-                                                     mock_mlflow_client_pred, tmp_path, caplog): 
+    @patch('models.predict_model.load_scalers')
+    @patch('models.predict_model.MlflowClient') 
+    @patch('models.predict_model.mlflow')
+    @patch('models.predict_model.yaml.safe_load')
+    def test_run_daily_prediction_load_scalers_fails(self, mock_yaml_safe_load, mock_mlflow_module, 
+                                                     MockMlflowClientClass, mock_load_scalers, MockPath,
+                                                     mock_params_config_pred, mock_mlflow_client_pred, 
+                                                     tmp_path, caplog): 
+        MockPath.side_effect = mock_path_factory_universal
+        # MockPath.return_value.exists.return_value = True # Factory handles this
+        
         config_file = tmp_path/"cfg_ls_fail.yaml"
         config_file.write_text(yaml.dump(mock_params_config_pred))
-        MockPath.return_value.exists.return_value = True
         
         mock_yaml_safe_load.return_value = mock_params_config_pred
-        mock_mlflow_module.pytorch.load_model.return_value = MagicMock()
-        MockMlflowClientClass.return_value = mock_mlflow_client_pred 
-        mock_load_scalers.return_value = None
+        mock_mlflow_module.pytorch.load_model.return_value = MagicMock() # Model loads
+        MockMlflowClientClass.return_value = mock_mlflow_client_pred # MLflow client works
+        mock_load_scalers.return_value = None # Scalers fail to load
 
         success = predict_model.run_daily_prediction(
             str(config_file), str(tmp_path/"input.npy"), "uri", "name", "ver"
@@ -253,58 +308,70 @@ class TestRunDailyPrediction:
         expected_dataset_run_id = mock_mlflow_client_pred.get_run.return_value.data.params["dataset_run_id"]
         assert f"Failed to load y_scalers for dataset_run_id: {expected_dataset_run_id}" in caplog.text
 
-    @patch('models.predict_model.yaml.safe_load')
-    @patch('models.predict_model.mlflow')
-    @patch('models.predict_model.MlflowClient') 
-    @patch('models.predict_model.load_scalers')
-    @patch('models.predict_model.load_processed_features_from_db')
+
     @patch('models.predict_model.Path')
-    def test_run_daily_prediction_load_tickers_fails(self, MockPath, mock_load_proc_meta, mock_load_scalers,
-                                                     MockMlflowClientClass, mock_mlflow_module,
-                                                     mock_yaml_safe_load, mock_params_config_pred,
-                                                     mock_mlflow_client_pred, tmp_path, caplog):
+    @patch('models.predict_model.load_processed_features_from_db') # Mock this
+    @patch('models.predict_model.load_scalers')
+    @patch('models.predict_model.MlflowClient') 
+    @patch('models.predict_model.mlflow')
+    @patch('models.predict_model.yaml.safe_load')
+    def test_run_daily_prediction_load_tickers_fails(self, mock_yaml_safe_load, mock_mlflow_module,
+                                                     MockMlflowClientClass, mock_load_scalers, 
+                                                     mock_load_proc_meta, MockPath, # mock_load_proc_meta is here
+                                                     mock_params_config_pred, mock_mlflow_client_pred, 
+                                                     tmp_path, caplog):
+        MockPath.side_effect = mock_path_factory_universal
+        # MockPath.return_value.exists.return_value = True # Factory handles this
+
         config_file = tmp_path/"cfg_lt_fail.yaml"
         config_file.write_text(yaml.dump(mock_params_config_pred))
-        MockPath.return_value.exists.return_value = True
 
         mock_yaml_safe_load.return_value = mock_params_config_pred
-        mock_mlflow_module.pytorch.load_model.return_value = MagicMock()
-        MockMlflowClientClass.return_value = mock_mlflow_client_pred
+        mock_mlflow_module.pytorch.load_model.return_value = MagicMock() # Model loads
+        MockMlflowClientClass.return_value = mock_mlflow_client_pred # Client works
+        # Scalers load, but tickers are missing in the returned dict from load_scalers
         mock_load_scalers.return_value = {'y_scalers': [MagicMock()]} 
-        mock_load_proc_meta.return_value = None
+        # OR tickers are present but load_processed_features_from_db (which also gives tickers) fails
+        # The SUT tries load_scalers first for tickers. If not found, then load_processed_features_from_db.
+        # Let's assume tickers are not in the dict from load_scalers, then load_processed_features_from_db is called and fails.
+        mock_load_proc_meta.return_value = None # This is what gives {'tickers': ...} if load_scalers doesn't.
 
         success = predict_model.run_daily_prediction(
             str(config_file), str(tmp_path/"input.npy"), "uri", "name", "ver"
         )
         assert success is False
         expected_dataset_run_id = mock_mlflow_client_pred.get_run.return_value.data.params["dataset_run_id"]
-        assert f"Failed to load tickers for dataset_run_id: {expected_dataset_run_id}" in caplog.text
+        # The error message comes from the SUT after trying load_scalers then load_processed_features_from_db
+        assert f"Failed to load tickers using dataset_run_id: {expected_dataset_run_id}" in caplog.text
 
-    @patch('models.predict_model.yaml.safe_load')
-    @patch('models.predict_model.mlflow')
-    @patch('models.predict_model.MlflowClient') 
-    @patch('models.predict_model.load_scalers')
-    @patch('models.predict_model.np.load') 
+
     @patch('models.predict_model.Path') 
-    def test_run_daily_prediction_input_file_missing(self, MockPath, mock_np_load, mock_load_scalers,
-                                               MockMlflowClientClass, mock_mlflow_module,
-                                               mock_yaml_safe_load, mock_params_config_pred,
-                                               mock_mlflow_client_pred, mock_y_scalers_pred, mock_tickers_pred,
-                                               tmp_path, caplog):
+    @patch('models.predict_model.np.load') 
+    @patch('models.predict_model.load_scalers')
+    @patch('models.predict_model.MlflowClient') 
+    @patch('models.predict_model.mlflow')
+    @patch('models.predict_model.yaml.safe_load')
+    def test_run_daily_prediction_input_file_missing(self, mock_yaml_safe_load, mock_mlflow_module,
+                                                     MockMlflowClientClass, mock_load_scalers, 
+                                                     mock_np_load, MockPath,
+                                                     mock_params_config_pred, mock_mlflow_client_pred, 
+                                                     mock_y_scalers_pred, mock_tickers_pred, # Fixtures
+                                                     tmp_path, caplog):
+        
+        input_seq_path_str = str(tmp_path / "non_existent_input.npy") # Real path string
+        
+        # Special side effect for Path to make one specific file not exist
+        def path_side_effect_input_missing(p_arg):
+            path_obj = mock_path_factory_universal(p_arg) # Get a standard mock path
+            if str(p_arg) == input_seq_path_str:
+                path_obj.exists.return_value = False # Override for this specific path
+            # else: path_obj.exists.return_value = True # Default from factory is True
+            return path_obj
+        MockPath.side_effect = path_side_effect_input_missing
+
         config_file = tmp_path/"cfg_ifm_fail.yaml"
         config_file.write_text(yaml.dump(mock_params_config_pred))
         
-        input_seq_path_str = str(tmp_path / "non_existent_input.npy")
-        
-        # Custom side effect to handle the non-existent input file case
-        def custom_path_factory_for_missing_file(path_arg_str_or_mock):
-            path_mock = mock_path_factory_universal(path_arg_str_or_mock)
-            if str(path_mock) == input_seq_path_str:
-                path_mock.exists.return_value = False
-            return path_mock
-        
-        MockPath.side_effect = custom_path_factory_for_missing_file
-
         mock_yaml_safe_load.return_value = mock_params_config_pred
         mock_mlflow_module.pytorch.load_model.return_value = MagicMock()
         MockMlflowClientClass.return_value = mock_mlflow_client_pred
@@ -317,47 +384,52 @@ class TestRunDailyPrediction:
         assert f"Input sequence file not found: {input_seq_path_str}" in caplog.text
         mock_np_load.assert_not_called()
 
-    @patch('models.predict_model.yaml.safe_load')
-    @patch('models.predict_model.mlflow')
-    @patch('models.predict_model.MlflowClient') 
-    @patch('models.predict_model.load_scalers')
-    @patch('models.predict_model.np.load')
-    @patch('models.predict_model.torch')
-    @patch('models.predict_model.Path') 
-    @patch('models.predict_model.json.dump')
-    @patch('models.predict_model.save_prediction')
-    @patch('models.predict_model.date')
-    def test_run_daily_prediction_input_dimension_mismatch(self, MockPath, mock_torch, mock_np_load,
-                                                           mock_load_scalers, MockMlflowClientClass, mock_mlflow_module,
-                                                           mock_yaml_safe_load, mock_params_config_pred,
-                                                           mock_mlflow_client_pred, mock_y_scalers_pred, mock_tickers_pred,
-                                                           tmp_path, caplog):
+    # Patch order: date, save_pred, json.dump, Path, torch, np.load, load_scalers, MlflowClient, mlflow, yaml.safe_load
+    # Args reverse: yaml, mlflow, MlflowClient, load_scalers, np.load, torch, Path, json.dump, save_pred, date
+    @patch('models.predict_model.date')                      # mock_date_idm
+    @patch('models.predict_model.save_prediction')           # mock_save_pred_idm (not used)
+    @patch('models.predict_model.json.dump')                 # mock_json_dump_idm (not used)
+    @patch('models.predict_model.Path')                      # MockPath_idm
+    @patch('models.predict_model.torch')                     # mock_torch_idm
+    @patch('models.predict_model.np.load')                   # mock_np_load_idm
+    @patch('models.predict_model.load_scalers')              # mock_load_scalers_idm
+    @patch('models.predict_model.MlflowClient')              # MockMlflowClientClass_idm
+    @patch('models.predict_model.mlflow')                    # mock_mlflow_module_idm
+    @patch('models.predict_model.yaml.safe_load')            # mock_yaml_safe_load_idm
+    def test_run_daily_prediction_input_dimension_mismatch(self, 
+                                                           mock_yaml_safe_load_idm, mock_mlflow_module_idm,
+                                                           MockMlflowClientClass_idm, mock_load_scalers_idm, 
+                                                           mock_np_load_idm, mock_torch_idm, MockPath_idm,
+                                                           mock_json_dump_idm, mock_save_pred_idm, mock_date_idm, # Mocks from patches
+                                                           mock_params_config_pred, # Fixture
+                                                           mock_mlflow_client_pred, mock_y_scalers_pred, 
+                                                           mock_tickers_pred, # Fixtures
+                                                           tmp_path, caplog): # Pytest fixtures
+        MockPath_idm.side_effect = mock_path_factory_universal
+
+        # mock_params_config_pred IS A FIXTURE, not a mock from a patch.
+        # This was the source of the yaml.dump error previously.
         config_file = tmp_path/"cfg_idm_fail.yaml"
-        config_file.write_text(yaml.dump(mock_params_config_pred))
+        config_file.write_text(yaml.dump(mock_params_config_pred)) # Should work now
         
         input_seq_path_for_dim_mismatch = tmp_path/"input_dim_mismatch.npy"
-        mismatched_input_seq = np.random.rand(1, 5, 3, 3).astype(np.float32)
+        mismatched_input_seq = np.random.rand(1, 5, 3, 3).astype(np.float32) # 3 stocks
         np.save(input_seq_path_for_dim_mismatch, mismatched_input_seq)
 
-        def path_side_effect_idm(p_arg):
-            path_obj = MagicMock(spec=Path); path_obj.__str__.return_value = str(p_arg)
-            path_obj.exists.return_value = True; path_obj.resolve.return_value = path_obj
-            return path_obj
-        MockPath.side_effect = path_side_effect_idm
-
-        mock_yaml_safe_load.return_value = mock_params_config_pred
-        mock_mlflow_module.pytorch.load_model.return_value = MagicMock()
-        MockMlflowClientClass.return_value = mock_mlflow_client_pred
-        mock_load_scalers.return_value = {'y_scalers': mock_y_scalers_pred, 'tickers': mock_tickers_pred} 
+        mock_yaml_safe_load_idm.return_value = mock_params_config_pred
+        mock_mlflow_module_idm.pytorch.load_model.return_value = MagicMock() # Model loads
+        MockMlflowClientClass_idm.return_value = mock_mlflow_client_pred # Client works
+        # mock_tickers_pred has 2 tickers. The input has 3.
+        mock_load_scalers_idm.return_value = {'y_scalers': mock_y_scalers_pred, 'tickers': mock_tickers_pred} 
         
-        mock_np_load.return_value = mismatched_input_seq
-        mock_torch.device.return_value = torch.device('cpu')
-        mock_torch.tensor.side_effect = lambda data, dtype: torch.tensor(data, dtype=dtype) # Use real
-        mock_model_instance = mock_mlflow_module.pytorch.load_model.return_value
+        mock_np_load_idm.return_value = mismatched_input_seq # Load the mismatched sequence
+        
+        mock_torch_idm.device.return_value = torch.device('cpu')
+        mock_torch_idm.float32 = torch.float32
+        mock_torch_idm.tensor.side_effect = lambda data, dtype: torch.tensor(data, dtype=dtype)
+        mock_model_instance = mock_mlflow_module_idm.pytorch.load_model.return_value
         mock_model_instance.to.return_value = mock_model_instance
-
-
-        mock_torch.no_grad.return_value.__enter__.return_value = None
+        mock_torch_idm.no_grad.return_value.__enter__.return_value = None
 
         success = predict_model.run_daily_prediction(
             str(config_file), str(input_seq_path_for_dim_mismatch), "uri", "name", "ver"
@@ -365,27 +437,26 @@ class TestRunDailyPrediction:
         assert success is False
         assert "Input sequence has 3 stocks, model/scalers expect 2." in caplog.text
 
-    @patch('models.predict_model.yaml.safe_load')
-    @patch('models.predict_model.mlflow')
-    @patch('models.predict_model.MlflowClient') 
-    @patch('models.predict_model.load_scalers')
-    @patch('models.predict_model.np.load')
-    @patch('models.predict_model.torch')
-    @patch('models.predict_model.Path') 
-    @patch('models.predict_model.json.dump')
-    @patch('models.predict_model.save_prediction')
     @patch('models.predict_model.date')
-    def test_run_daily_prediction_save_prediction_fails(self, mock_date, mock_save_pred, mock_json_dump, MockPath,
-                                                        mock_torch, mock_np_load, mock_load_scalers,
-                                                        MockMlflowClientClass, mock_mlflow_module,
-                                                        mock_yaml_safe_load,
-                                                        mock_params_config_pred, sample_input_sequence_np,
+    @patch('models.predict_model.save_prediction')
+    @patch('models.predict_model.json.dump')
+    @patch('models.predict_model.Path') 
+    @patch('models.predict_model.torch')
+    @patch('models.predict_model.np.load')
+    @patch('models.predict_model.load_scalers')
+    @patch('models.predict_model.MlflowClient') 
+    @patch('models.predict_model.mlflow')
+    @patch('models.predict_model.yaml.safe_load')
+    def test_run_daily_prediction_save_prediction_fails(self, mock_yaml_safe_load, mock_mlflow_module, 
+                                                        MockMlflowClientClass, mock_load_scalers,
+                                                        mock_np_load, mock_torch, MockPath,
+                                                        mock_json_dump, mock_save_pred, mock_date,
+                                                        mock_params_config_pred, sample_input_sequence_np, # Fixtures
                                                         mock_y_scalers_pred, mock_tickers_pred,
-                                                        mock_prod_model_train_dataset_run_id,
-                                                        mock_mlflow_client_pred, tmp_path, caplog):
-        # Use the universal path factory
+                                                        # mock_prod_model_train_dataset_run_id, # Not explicitly used by name in this test
+                                                        mock_mlflow_client_pred, tmp_path, caplog): # Fixtures
         MockPath.side_effect = mock_path_factory_universal
-
+        
         config_file = tmp_path/"cfg_sp_fail.yaml"
         config_file.write_text(yaml.dump(mock_params_config_pred))
         
@@ -414,11 +485,14 @@ class TestRunDailyPrediction:
         fixed_today = date(2023, 1, 11)
         mock_date.today.return_value = fixed_today
 
+        # This is the key for this test: save_prediction itself throws an error
         mock_save_pred.side_effect = Exception("DB Save Error for TICKA")
 
         success = predict_model.run_daily_prediction(
             str(config_file), str(input_seq_path_for_save_fail), "uri", "name", "ver"
         )
         assert success is False
+        # The primary error logged will be from the save_prediction failure
         assert "Error saving prediction for TICKA" in caplog.text 
+        # The SUT will then log a more general "Error in run_daily_prediction" wrapping this.
         assert "Error in run_daily_prediction: Error saving prediction for TICKA" in caplog.text
