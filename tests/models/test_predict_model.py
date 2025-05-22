@@ -206,12 +206,18 @@ class TestRunDailyPrediction:
         mock_save_pred.assert_called() # Check it was called
         expected_predictions_dir_str = mock_params_config_pred['output_paths']['predictions_dir']
 
-        mock_json_dump.assert_called_once() 
-        dumped_data = mock_json_dump.call_args[0][0]
-        assert 'TICKA' in dumped_data
-        assert 'TICKB' in dumped_data
-        assert dumped_data['TICKA'] == 50.0 
-        assert dumped_data['TICKB'] == pytest.approx(120.00000762939453)
+        # With this:
+        assert mock_json_dump.call_count == 2
+        # Check first call (latest_predictions.json)
+        first_call_data = mock_json_dump.call_args_list[0][0][0]  # First call, first positional arg
+        assert 'TICKA' in first_call_data
+        assert 'TICKB' in first_call_data
+        assert first_call_data['TICKA'] == 50.0 
+        assert first_call_data['TICKB'] == pytest.approx(120.00000762939453)
+
+        # Check second call (historical/date.json) - should have same data
+        second_call_data = mock_json_dump.call_args_list[1][0][0]
+        assert first_call_data == second_call_data  # Both should have identical data
 
     @patch('models.predict_model.Path') 
     @patch('models.predict_model.mlflow')
