@@ -2,7 +2,7 @@
 import sys
 from pathlib import Path
 import pytest
-from unittest.mock import patch, MagicMock, call, ANY # Import ANY
+from unittest.mock import patch, MagicMock, call, ANY
 import numpy as np
 import yaml
 import json
@@ -19,7 +19,7 @@ SRC_PATH = PROJECT_ROOT_FOR_TESTS / "src"
 if str(SRC_PATH) not in sys.path:
     sys.path.insert(0, str(SRC_PATH))
 
-from models import predict_model
+from models import predict_model # Now predict_model can be imported
 
 @pytest.fixture
 def mock_db_config_pred():
@@ -78,7 +78,7 @@ def mock_mlflow_client_pred(mock_prod_model_train_dataset_run_id):
 class TestRunDailyPrediction:
     @patch('models.predict_model.yaml.safe_load')
     @patch('models.predict_model.mlflow')
-    @patch('models.predict_model.MlflowClient') # Correct patch target if predict_model imports it directly
+    @patch('models.predict_model.MlflowClient') 
     @patch('models.predict_model.load_scalers')
     @patch('models.predict_model.load_processed_features_from_db')
     @patch('models.predict_model.np.load')
@@ -89,7 +89,7 @@ class TestRunDailyPrediction:
     @patch('models.predict_model.date')
     def test_run_daily_prediction_success(self, mock_date, mock_save_pred, mock_json_dump, MockPath,
                                           mock_torch, mock_np_load, mock_load_proc_meta, mock_load_scalers,
-                                          MockMlflowClientClass, mock_mlflow_module, # Changed mock_mlflow_client_class
+                                          MockMlflowClientClass, mock_mlflow_module,
                                           mock_yaml_safe_load,
                                           mock_params_config_pred, sample_input_sequence_np,
                                           mock_y_scalers_pred, mock_tickers_pred,
@@ -106,51 +106,37 @@ class TestRunDailyPrediction:
         prod_model_name = mock_params_config_pred['mlflow']['model_name']
         prod_model_version = "Production"
 
-        # Configure Path mock for file operations
         def path_side_effect(p_arg):
             path_obj = MagicMock(spec=Path)
             path_obj.mkdir = MagicMock()
             path_obj.parent = MagicMock(spec=Path); path_obj.parent.mkdir = MagicMock()
-            # Default to True, specific paths can override
             path_obj.exists.return_value = True 
             if str(p_arg) == str(input_seq_path): path_obj.exists.return_value = True
             path_obj.resolve.return_value = path_obj 
             path_obj.__str__.return_value = str(p_arg)
             return path_obj
         MockPath.side_effect = path_side_effect
-        # Make Path('...').open() work with mock_open if predict_model uses it (seems it uses global open)
 
         mock_yaml_safe_load.return_value = mock_params_config_pred
-        MockMlflowClientClass.return_value = mock_mlflow_client_pred # MlflowClient() returns our pred fixture
+        MockMlflowClientClass.return_value = mock_mlflow_client_pred
 
         mock_model_instance = MagicMock(spec=torch.nn.Module)
         mock_model_instance.eval = MagicMock()
-        # This is the raw output of the model
         raw_model_output = torch.tensor([[[0.5, 0.6]]], dtype=torch.float32)
         mock_model_instance.return_value = raw_model_output
         mock_mlflow_module.pytorch.load_model.return_value = mock_model_instance
+        mock_model_instance.to.return_value = mock_model_instance # model.to(device) returns self
 
         mock_load_scalers.return_value = {'y_scalers': mock_y_scalers_pred, 'tickers': mock_tickers_pred}
         mock_np_load.return_value = sample_input_sequence_np
 
-        # --- MODIFIED torch.tensor and .to() mocking ---
-        # SUT: input_tensor = torch.tensor(input_sequence_np, dtype=torch.float32)
-        # SUT: input_tensor = input_tensor.to(DEVICE)
-        # SUT: output = model(input_tensor.to(DEVICE)) -> here model is also called with .to(DEVICE)
-        
-        # 1. Mock torch.device to return a real device for SUT's DEVICE constant
+        # --- MODIFIED torch.tensor mocking ---
         real_cpu_device = torch.device('cpu')
-        mock_torch.device.return_value = real_cpu_device
+        mock_torch.device.return_value = real_cpu_device # SUT's DEVICE will be 'cpu'
 
-        # 2. mock_torch.tensor returns a real tensor (or a mock that can be .to'd)
-        # Let's have it return a real tensor based on the input it receives
-        def tensor_side_effect(data, dtype):
-            return torch.from_numpy(data).type(dtype) if isinstance(data, np.ndarray) else torch.tensor(data, dtype=dtype)
-        mock_torch.tensor.side_effect = tensor_side_effect
-        
-        # No need to mock .to directly on mock_torch.tensor's return value if it's a real tensor.
-        # The model instance's .to(DEVICE) also needs to be handled if the model itself is moved.
-        mock_model_instance.to.return_value = mock_model_instance # model.to(device) returns self
+        # mock_torch.tensor will be called by SUT: torch.tensor(numpy_array, dtype=torch.float32)
+        # It should return a real tensor.
+        mock_torch.tensor.side_effect = lambda data, dtype: torch.tensor(data, dtype=dtype) # Use real torch.tensor
 
         mock_torch.no_grad.return_value.__enter__.return_value = None
         mock_torch.isnan.return_value.any.return_value = False
@@ -166,18 +152,20 @@ class TestRunDailyPrediction:
         assert success is True
         mock_mlflow_module.pytorch.load_model.assert_called_once_with(model_uri=prod_model_uri)
         
-        # Assert that the SUT's `DEVICE` was used in `.to` calls
-        # The tensor created from np_array would be moved, and then passed to model, which might also be moved.
-        # This gets complex if we mock `to` on the tensor instance.
-        # A simpler check is that `torch.device` was called.
-        mock_torch.device.assert_called() 
-        
+        # SUT calls torch.tensor, then .to(DEVICE)
+        # Check torch.tensor call
+        mock_torch.tensor.assert_called_once_with(sample_input_sequence_np, dtype=torch.float32)
+        # The model instance and the tensor it processes are moved to device
+        mock_model_instance.to.assert_called_with(real_cpu_device)
+        # The input tensor is also moved to device before being passed to the model
+        # This is harder to assert directly on the tensor instance from mock_torch.tensor.return_value
+        # but we can infer it if mock_model_instance(ANY.to(real_cpu_device)) or similar.
+        # For now, ensuring the model is moved is a good check.
+
         # Check that np.load was called with the Path object created by the SUT
-        mock_np_load.assert_called_once_with(ANY) # ANY because the Path object is created inside SUT
+        mock_np_load.assert_called_once() # Only one positional arg
         assert mock_np_load.call_args[0][0].__str__() == str(input_seq_path)
 
-
-    # ... (Other tests in TestRunDailyPrediction, ensure config_file and input_seq_file are created)
 
     @patch('models.predict_model.yaml.safe_load')
     @patch('models.predict_model.mlflow')
@@ -199,7 +187,7 @@ class TestRunDailyPrediction:
 
     @patch('models.predict_model.yaml.safe_load')
     @patch('models.predict_model.mlflow')
-    @patch('models.predict_model.MlflowClient') # Patch where it's imported
+    @patch('models.predict_model.MlflowClient') 
     @patch('models.predict_model.Path')
     def test_run_daily_prediction_get_mlflow_metadata_fails(self, MockPath, MockMlflowClientClass, mock_mlflow_module,
                                                             mock_yaml_safe_load, mock_params_config_pred, tmp_path, caplog):
@@ -219,12 +207,12 @@ class TestRunDailyPrediction:
 
     @patch('models.predict_model.yaml.safe_load')
     @patch('models.predict_model.mlflow')
-    @patch('models.predict_model.MlflowClient') # Patch where it's imported
+    @patch('models.predict_model.MlflowClient') 
     @patch('models.predict_model.load_scalers')
     @patch('models.predict_model.Path')
     def test_run_daily_prediction_load_scalers_fails(self, MockPath, mock_load_scalers, MockMlflowClientClass,
                                                      mock_mlflow_module, mock_yaml_safe_load, mock_params_config_pred,
-                                                     mock_mlflow_client_pred, tmp_path, caplog): # mock_mlflow_client_pred is still useful for its configured return values
+                                                     mock_mlflow_client_pred, tmp_path, caplog): 
         config_file = tmp_path/"cfg_ls_fail.yaml"
         config_file.write_text(yaml.dump(mock_params_config_pred))
         MockPath.return_value.exists.return_value = True
@@ -243,7 +231,7 @@ class TestRunDailyPrediction:
 
     @patch('models.predict_model.yaml.safe_load')
     @patch('models.predict_model.mlflow')
-    @patch('models.predict_model.MlflowClient') # Patch where it's imported
+    @patch('models.predict_model.MlflowClient') 
     @patch('models.predict_model.load_scalers')
     @patch('models.predict_model.load_processed_features_from_db')
     @patch('models.predict_model.Path')
@@ -270,7 +258,7 @@ class TestRunDailyPrediction:
 
     @patch('models.predict_model.yaml.safe_load')
     @patch('models.predict_model.mlflow')
-    @patch('models.predict_model.MlflowClient') # Patch where it's imported
+    @patch('models.predict_model.MlflowClient') 
     @patch('models.predict_model.load_scalers')
     @patch('models.predict_model.np.load') 
     @patch('models.predict_model.Path') 
@@ -282,16 +270,14 @@ class TestRunDailyPrediction:
         config_file = tmp_path/"cfg_ifm_fail.yaml"
         config_file.write_text(yaml.dump(mock_params_config_pred))
         
-        input_seq_path_str = str(tmp_path / "non_existent_input.npy") # File is NOT created
+        input_seq_path_str = str(tmp_path / "non_existent_input.npy")
         
         def path_side_effect_ifm(p_arg):
             path_obj = MagicMock(spec=Path)
             path_obj.__str__.return_value = str(p_arg)
-            path_obj.resolve.return_value = path_obj # Return self for resolve
-            if str(p_arg) == input_seq_path_str:
-                path_obj.exists.return_value = False 
-            else:
-                path_obj.exists.return_value = True
+            path_obj.resolve.return_value = path_obj 
+            if str(p_arg) == input_seq_path_str: path_obj.exists.return_value = False 
+            else: path_obj.exists.return_value = True
             return path_obj
         MockPath.side_effect = path_side_effect_ifm
 
@@ -305,11 +291,11 @@ class TestRunDailyPrediction:
         )
         assert success is False
         assert f"Input sequence file not found: {input_seq_path_str}" in caplog.text
-        mock_np_load.assert_not_called() # Should not be called if file doesn't exist
+        mock_np_load.assert_not_called()
 
     @patch('models.predict_model.yaml.safe_load')
     @patch('models.predict_model.mlflow')
-    @patch('models.predict_model.MlflowClient') # Patch where it's imported
+    @patch('models.predict_model.MlflowClient') 
     @patch('models.predict_model.load_scalers')
     @patch('models.predict_model.np.load')
     @patch('models.predict_model.torch')
@@ -326,7 +312,7 @@ class TestRunDailyPrediction:
         mismatched_input_seq = np.random.rand(1, 5, 3, 3).astype(np.float32)
         np.save(input_seq_path_for_dim_mismatch, mismatched_input_seq)
 
-        def path_side_effect_idm(p_arg): # Simplified path mock
+        def path_side_effect_idm(p_arg):
             path_obj = MagicMock(spec=Path); path_obj.__str__.return_value = str(p_arg)
             path_obj.exists.return_value = True; path_obj.resolve.return_value = path_obj
             return path_obj
@@ -339,7 +325,11 @@ class TestRunDailyPrediction:
         
         mock_np_load.return_value = mismatched_input_seq
         mock_torch.device.return_value = torch.device('cpu')
-        mock_torch.tensor.side_effect = lambda data, dtype: torch.from_numpy(data).type(dtype) # Simplified
+        mock_torch.tensor.side_effect = lambda data, dtype: torch.tensor(data, dtype=dtype) # Use real
+        mock_model_instance = mock_mlflow_module.pytorch.load_model.return_value
+        mock_model_instance.to.return_value = mock_model_instance
+
+
         mock_torch.no_grad.return_value.__enter__.return_value = None
 
         success = predict_model.run_daily_prediction(
@@ -350,7 +340,7 @@ class TestRunDailyPrediction:
 
     @patch('models.predict_model.yaml.safe_load')
     @patch('models.predict_model.mlflow')
-    @patch('models.predict_model.MlflowClient') # Patch where it's imported
+    @patch('models.predict_model.MlflowClient') 
     @patch('models.predict_model.load_scalers')
     @patch('models.predict_model.np.load')
     @patch('models.predict_model.torch')
@@ -372,7 +362,7 @@ class TestRunDailyPrediction:
         input_seq_path_for_save_fail = tmp_path/"input_save_fail.npy"
         np.save(input_seq_path_for_save_fail, sample_input_sequence_np)
 
-        def path_side_effect_spf(p_arg): # Simplified path mock
+        def path_side_effect_spf(p_arg):
             path_obj = MagicMock(spec=Path); path_obj.__str__.return_value = str(p_arg)
             path_obj.mkdir = MagicMock(); path_obj.parent = MagicMock(spec=Path); path_obj.parent.mkdir = MagicMock()
             path_obj.exists.return_value = True; path_obj.resolve.return_value = path_obj
@@ -385,14 +375,15 @@ class TestRunDailyPrediction:
         mock_model_instance = MagicMock(spec=torch.nn.Module)
         mock_model_instance.eval = MagicMock()
         mock_model_instance.return_value = torch.tensor([[[0.5, 0.6]]], dtype=torch.float32)
-        mock_model_instance.to.return_value = mock_model_instance # model.to(device)
+        mock_model_instance.to.return_value = mock_model_instance
         mock_mlflow_module.pytorch.load_model.return_value = mock_model_instance
         
         mock_load_scalers.return_value = {'y_scalers': mock_y_scalers_pred, 'tickers': mock_tickers_pred}
         mock_np_load.return_value = sample_input_sequence_np
         
         mock_torch.device.return_value = torch.device('cpu')
-        mock_torch.tensor.side_effect = lambda data, dtype: torch.from_numpy(data).type(dtype)
+        mock_torch.tensor.side_effect = lambda data, dtype: torch.tensor(data, dtype=dtype) # Use real
+        
         mock_torch.no_grad.return_value.__enter__.return_value = None
         mock_torch.isnan.return_value.any.return_value = False
         
@@ -405,5 +396,5 @@ class TestRunDailyPrediction:
             str(config_file), str(input_seq_path_for_save_fail), "uri", "name", "ver"
         )
         assert success is False
-        assert "Error saving prediction for TICKA" in caplog.text # Specific error
-        assert "Error in run_daily_prediction: Error saving prediction for TICKA" in caplog.text # Outer catch
+        assert "Error saving prediction for TICKA" in caplog.text 
+        assert "Error in run_daily_prediction: Error saving prediction for TICKA" in caplog.text
