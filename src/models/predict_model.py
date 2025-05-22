@@ -215,7 +215,7 @@ if __name__ == '__main__':
     
     args = parser.parse_args()
 
-    # ... (config path resolution logic as before) ...
+    # ... (config path) ...
     config_path_resolved = Path(args.config).resolve() # Simplified for brevity
     input_sequence_path_resolved = Path(args.input_sequence_path).resolve()
 

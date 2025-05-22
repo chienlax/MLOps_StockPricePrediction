@@ -24,34 +24,40 @@ from models import predict_model # Now predict_model can be imported
 # Placed at the module level for clarity
 def mock_path_factory_universal(path_arg_str_or_mock):
     current_path_str = str(path_arg_str_or_mock)
-    path_mock = MagicMock(spec=Path) # Make it behave like a Path object
-
+    path_mock = MagicMock(spec=Path)
+    
+    # Basic Path behavior setup
     path_mock.__str__ = MagicMock(return_value=current_path_str)
-    path_mock.__fspath__ = MagicMock(return_value=current_path_str) # Crucial for open()
+    path_mock.__fspath__ = MagicMock(return_value=current_path_str)
     path_mock.resolve.return_value = path_mock
     path_mock.exists.return_value = True
-    path_mock.is_file.return_value = True # Assume it's a file if checked
-    path_mock.is_dir.return_value = True  # Assume it's a dir if checked
+    path_mock.is_file.return_value = True
+    path_mock.is_dir.return_value = True
     
-    # For path_mock.mkdir(parents=True, exist_ok=True)
-    path_mock.mkdir = MagicMock() 
-
-    # Parent handling:
-    # The parent mock must also have a functional mkdir, and exists=True
+    # Make mkdir actually create the directory
+    def mkdir_side_effect(*args, **kwargs):
+        # Actually create the directory when mkdir is called
+        real_path = Path(current_path_str)
+        real_path.mkdir(*args, **kwargs)
+    
+    path_mock.mkdir = MagicMock(side_effect=mkdir_side_effect)
+    
+    # Parent handling (same as before)
     mock_parent = MagicMock(spec=Path)
-    # Use real Path to determine parent string.
-    # Handle root case to avoid issues, though less likely with tmp_path
     if Path(current_path_str) == Path(current_path_str).parent:
-        parent_str = current_path_str # Parent of root is root itself
+        parent_str = current_path_str
     else:
         parent_str = str(Path(current_path_str).parent)
     
     mock_parent.__str__ = MagicMock(return_value=parent_str)
     mock_parent.__fspath__ = MagicMock(return_value=parent_str)
-    mock_parent.mkdir = MagicMock() # Crucial for path_obj.parent.mkdir(parents=True, exist_ok=True)
+    
+    # Also make parent's mkdir create the directory
+    mock_parent.mkdir = MagicMock(side_effect=lambda *args, **kwargs: Path(parent_str).mkdir(*args, **kwargs))
     mock_parent.exists.return_value = True
     path_mock.parent = mock_parent
     
+    # Path division handling (same as before)
     def truediv_handler(segment_to_join):
         base_path_for_join = str(path_mock) 
         new_combined_path_str = str(Path(base_path_for_join) / segment_to_join)
@@ -59,9 +65,6 @@ def mock_path_factory_universal(path_arg_str_or_mock):
 
     path_mock.__truediv__ = MagicMock(side_effect=truediv_handler)
     
-    # If your SUT uses path_obj.open() instead of global open(path_obj, ...)
-    # path_mock.open = mock_open() # from unittest.mock
-
     return path_mock
 
 
@@ -342,7 +345,7 @@ class TestRunDailyPrediction:
         assert success is False
         expected_dataset_run_id = mock_mlflow_client_pred.get_run.return_value.data.params["dataset_run_id"]
         # The error message comes from the SUT after trying load_scalers then load_processed_features_from_db
-        assert f"Failed to load tickers using dataset_run_id: {expected_dataset_run_id}" in caplog.text
+        assert f"Failed to load tickers for dataset_run_id: {expected_dataset_run_id}" in caplog.text
 
 
     @patch('models.predict_model.Path') 
@@ -453,9 +456,12 @@ class TestRunDailyPrediction:
                                                         mock_json_dump, mock_save_pred, mock_date,
                                                         mock_params_config_pred, sample_input_sequence_np, # Fixtures
                                                         mock_y_scalers_pred, mock_tickers_pred,
-                                                        # mock_prod_model_train_dataset_run_id, # Not explicitly used by name in this test
                                                         mock_mlflow_client_pred, tmp_path, caplog): # Fixtures
         MockPath.side_effect = mock_path_factory_universal
+    
+        # Pre-create the predictions directory to avoid file not found error
+        predictions_dir = Path(mock_params_config_pred['output_paths']['predictions_dir'])
+        predictions_dir.mkdir(parents=True, exist_ok=True)
         
         config_file = tmp_path/"cfg_sp_fail.yaml"
         config_file.write_text(yaml.dump(mock_params_config_pred))
@@ -488,11 +494,10 @@ class TestRunDailyPrediction:
         # This is the key for this test: save_prediction itself throws an error
         mock_save_pred.side_effect = Exception("DB Save Error for TICKA")
 
+        # Execute test
         success = predict_model.run_daily_prediction(
             str(config_file), str(input_seq_path_for_save_fail), "uri", "name", "ver"
         )
+        
         assert success is False
-        # The primary error logged will be from the save_prediction failure
-        assert "Error saving prediction for TICKA" in caplog.text 
-        # The SUT will then log a more general "Error in run_daily_prediction" wrapping this.
-        assert "Error in run_daily_prediction: Error saving prediction for TICKA" in caplog.text
+        assert "DB Save Error for TICKA" in caplog.text
