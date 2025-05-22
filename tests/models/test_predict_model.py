@@ -19,7 +19,7 @@ SRC_PATH = PROJECT_ROOT_FOR_TESTS / "src"
 if str(SRC_PATH) not in sys.path:
     sys.path.insert(0, str(SRC_PATH))
 
-from models import predict_model # Now predict_model can be imported
+from models import predict_model
 
 # Placed at the module level for clarity
 def mock_path_factory_universal(path_arg_str_or_mock):
@@ -161,9 +161,11 @@ class TestRunDailyPrediction:
 
         mock_model_instance = MagicMock(spec=torch.nn.Module)
         mock_model_instance.eval = MagicMock()
-        raw_model_output = torch.tensor([[[0.5, 0.6]]], dtype=torch.float32) # Real tensor for output
-        mock_model_instance.return_value = raw_model_output
+        # Set up the __call__ method to return the output tensor
+        mock_model_instance.__call__.return_value = torch.tensor([[[0.5, 0.6]]], dtype=torch.float32)
+        # Configure mlflow to return this mock model
         mock_mlflow_module.pytorch.load_model.return_value = mock_model_instance
+        # Configure .to() to return the same instance for chaining
         mock_model_instance.to.return_value = mock_model_instance
 
         mock_load_scalers.return_value = {'y_scalers': mock_y_scalers_pred, 'tickers': mock_tickers_pred}
