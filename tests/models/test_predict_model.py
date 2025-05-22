@@ -19,7 +19,48 @@ SRC_PATH = PROJECT_ROOT_FOR_TESTS / "src"
 if str(SRC_PATH) not in sys.path:
     sys.path.insert(0, str(SRC_PATH))
 
-from models import predict_model # Now predict_model can be imported
+from models import predict_model
+
+# Universal Path mock factory
+def mock_path_factory_universal(path_arg_str_or_mock):
+    # Convert argument to a string
+    current_path_str = str(path_arg_str_or_mock)
+
+    path_mock = MagicMock(spec=Path)
+    
+    # Configure methods that return string representations or Path-like objects
+    path_mock.__str__ = MagicMock(return_value=current_path_str)
+    path_mock.__fspath__ = MagicMock(return_value=current_path_str)
+    path_mock.resolve.return_value = path_mock
+
+    # Configure file/directory status methods - default behavior
+    path_mock.exists.return_value = True
+    path_mock.is_file.return_value = True
+    path_mock.is_dir.return_value = True
+    
+    path_mock.mkdir = MagicMock(return_value=None)
+
+    # Configure parent mock
+    if current_path_str == str(Path(current_path_str).parent):
+        mock_parent = path_mock  # Parent of root is root
+    else:
+        parent_str = str(Path(current_path_str).parent)
+        mock_parent = MagicMock(spec=Path)
+        mock_parent.__str__ = MagicMock(return_value=parent_str)
+        mock_parent.__fspath__ = MagicMock(return_value=parent_str)
+        mock_parent.mkdir = MagicMock(return_value=None)
+        mock_parent.exists.return_value = True
+    path_mock.parent = mock_parent
+    
+    # Configure the __truediv__ method (for the / operator)
+    def truediv_handler(segment_to_join):
+        base_path_for_join = str(path_mock)
+        new_combined_path_str = str(Path(base_path_for_join) / segment_to_join)
+        return mock_path_factory_universal(new_combined_path_str)
+
+    path_mock.__truediv__ = MagicMock(side_effect=truediv_handler)
+    
+    return path_mock
 
 @pytest.fixture
 def mock_db_config_pred():
@@ -96,6 +137,9 @@ class TestRunDailyPrediction:
                                           mock_prod_model_train_dataset_run_id,
                                           mock_mlflow_client_pred, tmp_path):
 
+        # Use the universal path factory instead of custom side effect
+        MockPath.side_effect = mock_path_factory_universal
+
         config_file = tmp_path / "params_pred.yaml"
         config_file.write_text(yaml.dump(mock_params_config_pred))
         
@@ -106,17 +150,6 @@ class TestRunDailyPrediction:
         prod_model_name = mock_params_config_pred['mlflow']['model_name']
         prod_model_version = "Production"
 
-        def path_side_effect(p_arg):
-            path_obj = MagicMock(spec=Path)
-            path_obj.mkdir = MagicMock()
-            path_obj.parent = MagicMock(spec=Path); path_obj.parent.mkdir = MagicMock()
-            path_obj.exists.return_value = True 
-            if str(p_arg) == str(input_seq_path): path_obj.exists.return_value = True
-            path_obj.resolve.return_value = path_obj 
-            path_obj.__str__.return_value = str(p_arg)
-            return path_obj
-        MockPath.side_effect = path_side_effect
-
         mock_yaml_safe_load.return_value = mock_params_config_pred
         MockMlflowClientClass.return_value = mock_mlflow_client_pred
 
@@ -125,21 +158,17 @@ class TestRunDailyPrediction:
         raw_model_output = torch.tensor([[[0.5, 0.6]]], dtype=torch.float32)
         mock_model_instance.return_value = raw_model_output
         mock_mlflow_module.pytorch.load_model.return_value = mock_model_instance
-        mock_model_instance.to.return_value = mock_model_instance # model.to(device) returns self
+        mock_model_instance.to.return_value = mock_model_instance 
 
         mock_load_scalers.return_value = {'y_scalers': mock_y_scalers_pred, 'tickers': mock_tickers_pred}
         mock_np_load.return_value = sample_input_sequence_np
 
-        # --- MODIFIED torch.tensor mocking ---
         real_cpu_device = torch.device('cpu')
         mock_torch.device.return_value = real_cpu_device
 
         # Ensure that mock_torch.float32 returns the actual torch.float32 type
-        mock_torch.float32 = torch.float32 # <<< SOLUTION: ADD THIS LINE
-
-        # mock_torch.tensor will be called by SUT: torch.tensor(numpy_array, dtype=torch.float32)
-        # It should return a real tensor.
-        mock_torch.tensor.side_effect = lambda data, dtype: torch.tensor(data, dtype=dtype) # Use real torch.tensor
+        mock_torch.float32 = torch.float32
+        mock_torch.tensor.side_effect = lambda data, dtype: torch.tensor(data, dtype=dtype)
 
         mock_torch.no_grad.return_value.__enter__.return_value = None
         mock_torch.isnan.return_value.any.return_value = False
@@ -155,18 +184,10 @@ class TestRunDailyPrediction:
         assert success is True
         mock_mlflow_module.pytorch.load_model.assert_called_once_with(model_uri=prod_model_uri)
         
-        # SUT calls torch.tensor, then .to(DEVICE)
-        # Check torch.tensor call
         mock_torch.tensor.assert_called_once_with(sample_input_sequence_np, dtype=torch.float32)
-        # The model instance and the tensor it processes are moved to device
         mock_model_instance.to.assert_called_with(real_cpu_device)
-        # The input tensor is also moved to device before being passed to the model
-        # This is harder to assert directly on the tensor instance from mock_torch.tensor.return_value
-        # but we can infer it if mock_model_instance(ANY.to(real_cpu_device)) or similar.
-        # For now, ensuring the model is moved is a good check.
-
-        # Check that np.load was called with the Path object created by the SUT
-        mock_np_load.assert_called_once() # Only one positional arg
+  
+        mock_np_load.assert_called_once()
         assert mock_np_load.call_args[0][0].__str__() == str(input_seq_path)
 
 
@@ -266,23 +287,23 @@ class TestRunDailyPrediction:
     @patch('models.predict_model.np.load') 
     @patch('models.predict_model.Path') 
     def test_run_daily_prediction_input_file_missing(self, MockPath, mock_np_load, mock_load_scalers,
-                                                     MockMlflowClientClass, mock_mlflow_module,
-                                                     mock_yaml_safe_load, mock_params_config_pred,
-                                                     mock_mlflow_client_pred, mock_y_scalers_pred, mock_tickers_pred,
-                                                     tmp_path, caplog):
+                                               MockMlflowClientClass, mock_mlflow_module,
+                                               mock_yaml_safe_load, mock_params_config_pred,
+                                               mock_mlflow_client_pred, mock_y_scalers_pred, mock_tickers_pred,
+                                               tmp_path, caplog):
         config_file = tmp_path/"cfg_ifm_fail.yaml"
         config_file.write_text(yaml.dump(mock_params_config_pred))
         
         input_seq_path_str = str(tmp_path / "non_existent_input.npy")
         
-        def path_side_effect_ifm(p_arg):
-            path_obj = MagicMock(spec=Path)
-            path_obj.__str__.return_value = str(p_arg)
-            path_obj.resolve.return_value = path_obj 
-            if str(p_arg) == input_seq_path_str: path_obj.exists.return_value = False 
-            else: path_obj.exists.return_value = True
-            return path_obj
-        MockPath.side_effect = path_side_effect_ifm
+        # Custom side effect to handle the non-existent input file case
+        def custom_path_factory_for_missing_file(path_arg_str_or_mock):
+            path_mock = mock_path_factory_universal(path_arg_str_or_mock)
+            if str(path_mock) == input_seq_path_str:
+                path_mock.exists.return_value = False
+            return path_mock
+        
+        MockPath.side_effect = custom_path_factory_for_missing_file
 
         mock_yaml_safe_load.return_value = mock_params_config_pred
         mock_mlflow_module.pytorch.load_model.return_value = MagicMock()
@@ -303,6 +324,9 @@ class TestRunDailyPrediction:
     @patch('models.predict_model.np.load')
     @patch('models.predict_model.torch')
     @patch('models.predict_model.Path') 
+    @patch('models.predict_model.json.dump')
+    @patch('models.predict_model.save_prediction')
+    @patch('models.predict_model.date')
     def test_run_daily_prediction_input_dimension_mismatch(self, MockPath, mock_torch, mock_np_load,
                                                            mock_load_scalers, MockMlflowClientClass, mock_mlflow_module,
                                                            mock_yaml_safe_load, mock_params_config_pred,
@@ -359,18 +383,14 @@ class TestRunDailyPrediction:
                                                         mock_y_scalers_pred, mock_tickers_pred,
                                                         mock_prod_model_train_dataset_run_id,
                                                         mock_mlflow_client_pred, tmp_path, caplog):
+        # Use the universal path factory
+        MockPath.side_effect = mock_path_factory_universal
+
         config_file = tmp_path/"cfg_sp_fail.yaml"
         config_file.write_text(yaml.dump(mock_params_config_pred))
         
         input_seq_path_for_save_fail = tmp_path/"input_save_fail.npy"
         np.save(input_seq_path_for_save_fail, sample_input_sequence_np)
-
-        def path_side_effect_spf(p_arg):
-            path_obj = MagicMock(spec=Path); path_obj.__str__.return_value = str(p_arg)
-            path_obj.mkdir = MagicMock(); path_obj.parent = MagicMock(spec=Path); path_obj.parent.mkdir = MagicMock()
-            path_obj.exists.return_value = True; path_obj.resolve.return_value = path_obj
-            return path_obj
-        MockPath.side_effect = path_side_effect_spf
 
         mock_yaml_safe_load.return_value = mock_params_config_pred
         MockMlflowClientClass.return_value = mock_mlflow_client_pred
@@ -386,7 +406,7 @@ class TestRunDailyPrediction:
         
         mock_torch.device.return_value = torch.device('cpu')
         mock_torch.float32 = torch.float32
-        mock_torch.tensor.side_effect = lambda data, dtype: torch.tensor(data, dtype=dtype) # Use real
+        mock_torch.tensor.side_effect = lambda data, dtype: torch.tensor(data, dtype=dtype)
         
         mock_torch.no_grad.return_value.__enter__.return_value = None
         mock_torch.isnan.return_value.any.return_value = False
