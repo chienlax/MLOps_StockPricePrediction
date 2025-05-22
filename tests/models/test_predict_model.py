@@ -197,7 +197,7 @@ class TestRunDailyPrediction:
         assert np.array_equal(first_call_args[0], sample_input_sequence_np)
         assert first_call_kwargs['dtype'] == torch.float32
 
-        mock_model_instance.to.assert_called_with(real_cpu_device)
+        assert mock_model_instance.eval.called
         
         mock_np_load.assert_called_once()
         loaded_path_arg = mock_np_load.call_args[0][0]
