@@ -159,14 +159,15 @@ class TestRunDailyPrediction:
         mock_yaml_safe_load.return_value = mock_params_config_pred
         MockMlflowClientClass.return_value = mock_mlflow_client_pred
 
+        real_cpu_device = torch.device('cpu')
+        mock_torch.device.return_value = real_cpu_device
+
+        # Create model instance with properly tracked .to() method
         mock_model_instance = MagicMock(spec=torch.nn.Module)
         mock_model_instance.eval = MagicMock()
-        # Configure what the model returns when called directly
         mock_model_instance.return_value = torch.tensor([[[0.5, 0.6]]], dtype=torch.float32)
-        # Configure mlflow to return this mock model
+        mock_model_instance.to.side_effect = lambda device: mock_model_instance
         mock_mlflow_module.pytorch.load_model.return_value = mock_model_instance
-        # Configure .to() to return the same instance for chaining
-        mock_model_instance.to.return_value = mock_model_instance
 
         mock_load_scalers.return_value = {'y_scalers': mock_y_scalers_pred, 'tickers': mock_tickers_pred}
         mock_np_load.return_value = sample_input_sequence_np
@@ -181,7 +182,6 @@ class TestRunDailyPrediction:
 
         fixed_today = date(2023, 1, 11)
         mock_date.today.return_value = fixed_today
-        # today_iso = fixed_today.isoformat() # Not directly used for assertion here
 
         success = predict_model.run_daily_prediction(
             str(config_file), str(input_seq_path), prod_model_uri, prod_model_name, prod_model_version
@@ -190,56 +190,28 @@ class TestRunDailyPrediction:
         assert success is True
         mock_mlflow_module.pytorch.load_model.assert_called_once_with(model_uri=prod_model_uri)
         
-        # Check torch.tensor call (the first positional arg is sample_input_sequence_np, second is dtype)
-        # We check that the first argument to torch.tensor was the numpy array.
-        # The actual comparison needs to be careful with numpy arrays.
-        # Using ANY for the numpy array if direct comparison is tricky due to object identity.
-        # However, since mock_np_load.return_value is sample_input_sequence_np, it should be the same object.
+        
         call_args_list = mock_torch.tensor.call_args_list
         assert len(call_args_list) > 0 # Ensure it was called
-        # Check the first call. SUT calls torch.tensor(numpy_array, dtype=torch.float32)
         first_call_args, first_call_kwargs = call_args_list[0]
         assert np.array_equal(first_call_args[0], sample_input_sequence_np)
         assert first_call_kwargs['dtype'] == torch.float32
 
         mock_model_instance.to.assert_called_with(real_cpu_device)
         
-        # Check that np.load was called with the Path object created by the SUT for input_seq_path
-        # mock_np_load.call_args[0][0] is the argument to np.load
-        # It should be a string that matches str(input_seq_path)
-        # The mock_path_factory makes it a mock, so its __str__ should return the path string
         mock_np_load.assert_called_once()
         loaded_path_arg = mock_np_load.call_args[0][0]
         assert str(loaded_path_arg) == str(input_seq_path)
 
-        # Check save_prediction call
         mock_save_pred.assert_called() # Check it was called
-        # Example: mock_save_pred.assert_any_call(ANY, 'TICKA', ANY, ANY, ANY, 50.0, ANY)
-
-        # Check json.dump call for latest_predictions.json
-        # The first argument to json.dump is the data, the second is the file object.
-        # The file object comes from open(latest_file_path, 'w+')
-        # We need to ensure the path used for open() was correct.
-        # The path construction in SUT is:
-        # predictions_dir = Path(params['output_paths']['predictions_dir'])
-        # latest_file_path = predictions_dir / "latest_predictions.json"
-        # historical_file_path = predictions_dir / f"{today_iso}_predictions.json"
-
         expected_predictions_dir_str = mock_params_config_pred['output_paths']['predictions_dir']
-        
-        # Check call to json.dump (assume only one for latest_predictions.json)
-        # The second argument to dump is a file-like object. We can't easily check its path from here
-        # without more complex mocking of `open`. However, the FileNotFoundError fix 
-        # for parent.mkdir implies the path resolution itself is working.
+
         mock_json_dump.assert_called_once() 
-        # Verify the content written to json for latest_predictions
         dumped_data = mock_json_dump.call_args[0][0]
         assert 'TICKA' in dumped_data
         assert 'TICKB' in dumped_data
         assert dumped_data['TICKA'] == 50.0 
-        # Note: floating point comparisons might need pytest.approx
         assert dumped_data['TICKB'] == pytest.approx(120.00000762939453)
-
 
     @patch('models.predict_model.Path') 
     @patch('models.predict_model.mlflow')
