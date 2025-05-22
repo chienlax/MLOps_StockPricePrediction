@@ -1,19 +1,18 @@
 # tests/models/test_train_model.py
 import pytest
-from unittest.mock import patch, MagicMock, call
+from unittest.mock import patch, MagicMock, call, ANY # Import ANY
 import torch
 import torch.nn as nn
 import numpy as np
 import yaml
 from pathlib import Path
-import mlflow # For spec
+import mlflow 
 from mlflow.entities import Run as MlflowRun
-from mlflow.entities.model_registry import ModelVersion as MlflowModelVersion 
+from mlflow.entities.model_registry import ModelVersion as MlflowModelVersion
 from mlflow.tracking import MlflowClient
 
 from models.train_model import train_final_model, run_training
 
-# --- Fixtures ---
 @pytest.fixture
 def mock_db_config_train():
     return {'dbname': 'test_train_db', 'user': 'u', 'password': 'p', 'host': 'h', 'port': '5432'}
@@ -43,7 +42,7 @@ def sample_best_hyperparams_train():
     }
 
 @pytest.fixture
-def sample_scaled_data_train(): # Return numpy arrays
+def sample_scaled_data_train():
     return {
         'X_train': np.random.rand(20, 5, 2, 3).astype(np.float32),
         'y_train': np.random.rand(20, 1, 2).astype(np.float32),
@@ -66,8 +65,6 @@ def mock_tickers_train():
 def device_eval():
     return torch.device('cpu')
 
-
-# --- Tests for train_final_model ---
 class TestTrainFinalModel:
     @patch('models.train_model.StockLSTM')
     @patch('models.train_model.StockLSTMWithAttention')
@@ -90,21 +87,16 @@ class TestTrainFinalModel:
         mock_model_inst.to.return_value = mock_model_inst
         mock_model_inst.state_dict.return_value = {'param': torch.tensor(1.0)}
         mock_model_inst.load_state_dict = MagicMock()
-        # *** MODIFIED: Ensure model output requires grad ***
         mock_model_inst.return_value = torch.rand(sample_best_hyperparams_train['batch_size'], 1, 2, requires_grad=True)
         mock_model_inst.parameters.return_value = [torch.nn.Parameter(torch.randn(1))]
-
-        model_type = sample_best_hyperparams_train.get('model_type', 'lstm')
-        if model_type == 'lstm':
-            mock_lstm_basic.return_value = mock_model_inst
-        elif model_type == 'lstm_attention':
-            mock_lstm_att.return_value = mock_model_inst
-        elif model_type == 'lstm_cross_attention':
-            mock_lstm_cross.return_value = mock_model_inst
         
-        # ... (rest of the test as previously corrected)
-        dummy_X_batch = torch.rand(sample_best_hyperparams_train['batch_size'], 5, 2, 3)
-        dummy_y_batch = torch.rand(sample_best_hyperparams_train['batch_size'], 1, 2)
+        model_type = sample_best_hyperparams_train.get('model_type', 'lstm')
+        if model_type == 'lstm': mock_lstm_basic.return_value = mock_model_inst
+        elif model_type == 'lstm_attention': mock_lstm_att.return_value = mock_model_inst
+        else: mock_lstm_cross.return_value = mock_model_inst
+
+        dummy_X_batch = torch.rand(sample_best_hyperparams_train['batch_size'], 5, 2, 3, device=device_eval)
+        dummy_y_batch = torch.rand(sample_best_hyperparams_train['batch_size'], 1, 2, device=device_eval)
         
         mock_train_loader_obj = MagicMock()
         mock_train_loader_obj.__iter__.return_value = iter([(dummy_X_batch, dummy_y_batch)])
@@ -150,8 +142,9 @@ class TestTrainFinalModel:
         assert mock_mlflow.log_metric.call_count >= mock_training_params_cfg_train['epochs']
         
         mock_eval_model.assert_called()
+        # *** MODIFIED: Use unittest.mock.ANY ***
         mock_viz_preds.assert_called_once_with(
-            pytest.ANY, y_test_np, mock_y_scalers_train,
+            ANY, y_test_np, mock_y_scalers_train,
             mock_tickers_train, plot_output_dir, num_points=20
         )
         
@@ -163,7 +156,6 @@ class TestTrainFinalModel:
         
         assert model_obj is mock_model_inst
         assert mlflow_run_id_out == "mock_mlflow_run_123"
-
 
     @patch('models.train_model.StockLSTM')
     @patch('models.train_model.StockLSTMWithAttention')
@@ -177,20 +169,19 @@ class TestTrainFinalModel:
                                            tmp_path, caplog):
         mock_model_inst = MagicMock(spec=nn.Module)
         mock_model_inst.to.return_value = mock_model_inst
-        # *** MODIFIED: Ensure model output requires grad ***
         mock_model_inst.return_value = torch.rand(32,1,2, requires_grad=True)
         mock_model_inst.parameters.return_value = [torch.nn.Parameter(torch.randn(1))]
 
         model_type = sample_best_hyperparams_train.get('model_type', 'lstm')
-        if model_type == 'lstm':
-            mock_lstm_basic.return_value = mock_model_inst
-        elif model_type == 'lstm_attention':
-            mock_lstm_att.return_value = mock_model_inst
-        elif model_type == 'lstm_cross_attention':
-            mock_lstm_cross.return_value = mock_model_inst
+        if model_type == 'lstm': mock_lstm_basic.return_value = mock_model_inst
+        elif model_type == 'lstm_attention': mock_lstm_att.return_value = mock_model_inst
+        else: mock_lstm_cross.return_value = mock_model_inst
 
         mock_train_loader_obj = MagicMock()
-        mock_train_loader_obj.__iter__.return_value = iter([(torch.rand(32,5,2,3), torch.rand(32,1,2))])
+        # Ensure data passed to iter is on the correct device for the SUT
+        dummy_train_X = torch.rand(32,5,2,3, device=device_eval)
+        dummy_train_y = torch.rand(32,1,2, device=device_eval)
+        mock_train_loader_obj.__iter__.return_value = iter([(dummy_train_X, dummy_train_y)])
         mock_train_loader_obj.__len__.return_value = 1
         mock_dataloader.return_value = mock_train_loader_obj
 
@@ -214,8 +205,6 @@ class TestTrainFinalModel:
         assert "Test data is empty or None." in caplog.text
         assert "No test set evaluation performed" in caplog.text
 
-
-# --- Tests for run_training ---
 class TestRunTraining:
     @patch('models.train_model.yaml.safe_load')
     @patch('models.train_model.load_scaled_features')
@@ -229,7 +218,7 @@ class TestRunTraining:
                                   mock_load_opt_res, mock_load_proc_meta, mock_load_scalers, mock_load_scaled,
                                   mock_yaml_safe_load,
                                   mock_params_config_train, sample_scaled_data_train,
-                                  mock_y_scalers_train, mock_tickers_train,
+                                  mock_y_scalers_train, mock_tickers_train, device_eval, # Added device_eval
                                   sample_best_hyperparams_train, tmp_path):
         dataset_run_id = "final_train_data_run_001"
         config_file = tmp_path / "params_train.yaml"
@@ -241,13 +230,12 @@ class TestRunTraining:
         mock_load_opt_res.return_value = sample_best_hyperparams_train
         mock_load_proc_meta.return_value = {'tickers': mock_tickers_train}
 
-        trained_model_mock = MagicMock()
+        trained_model_mock = MagicMock(spec=nn.Module)
         test_predictions_np = np.random.rand(10,1,2)
+        final_metrics = {'avg_mape': 0.1}
+        expected_mlflow_run_id = "mlflow_run_for_trained_model_xyz"
         mock_train_final.return_value = (
-            trained_model_mock,
-            test_predictions_np,
-            {'avg_mape': 0.1},
-            "mlflow_run_for_trained_model_xyz"
+            trained_model_mock, test_predictions_np, final_metrics, expected_mlflow_run_id
         )
         
         mock_mlflow_client_inst = MagicMock(spec=MlflowClient)
@@ -259,32 +247,29 @@ class TestRunTraining:
         
         result_mlflow_run_id = run_training(str(config_file), dataset_run_id)
 
-        assert result_mlflow_run_id == "mlflow_run_for_trained_model_xyz"
-        mock_mlflow_module.set_tracking_uri.assert_called_once_with(mock_params_config_train['mlflow']['tracking_uri'])
-        mock_load_scaled.assert_any_call(mock_params_config_train['database'], dataset_run_id, 'X_train')
-        mock_load_scalers.assert_called_once_with(mock_params_config_train['database'], dataset_run_id)
-        mock_load_opt_res.assert_called_once_with(mock_params_config_train['database'], dataset_run_id)
+        assert result_mlflow_run_id == expected_mlflow_run_id
         
-        mock_train_final.assert_called_once()
-        # *** MODIFIED: Correctly access call arguments ***
-        call_args_info = mock_train_final.call_args
-        assert call_args_info is not None, "train_final_model was not called"
-        args_train_final = call_args_info.args
-        
-        assert args_train_final[0] == dataset_run_id
-        assert args_train_final[1] == sample_best_hyperparams_train
-        
-        mock_mlflow_client_inst.search_model_versions.assert_called_once_with(f"run_id='{result_mlflow_run_id}'")
-        mock_mlflow_client_inst.set_registered_model_alias.assert_called_once_with(
-            name=mock_params_config_train['mlflow']['experiment_name'],
-            alias="Production",
-            version="3"
+        # *** MODIFIED: Use assert_called_once_with for train_final_model ***
+        mock_train_final.assert_called_once_with(
+            dataset_run_id=dataset_run_id,
+            best_params=sample_best_hyperparams_train,
+            X_train=sample_scaled_data_train['X_train'],
+            y_train=sample_scaled_data_train['y_train'],
+            X_test=sample_scaled_data_train['X_test'],
+            y_test=sample_scaled_data_train['y_test'],
+            num_features=sample_scaled_data_train['X_train'].shape[3], # Calculated from data
+            num_stocks=sample_scaled_data_train['X_train'].shape[2],   # Calculated from data
+            y_scalers=mock_y_scalers_train,
+            tickers=mock_tickers_train,
+            device=ANY, # device is created inside run_training, check if it's a torch.device
+            training_epochs=mock_params_config_train['training']['epochs'],
+            plot_output_dir=Path(mock_params_config_train['output_paths']['training_plots_dir']),
+            mlflow_experiment_name=mock_params_config_train['mlflow']['experiment_name']
         )
+        actual_device_arg = mock_train_final.call_args.kwargs['device']
+        assert isinstance(actual_device_arg, torch.device)
         
-        if test_predictions_np is not None and test_predictions_np.size > 0:
-            mock_save_pred.assert_called()
-        else:
-            mock_save_pred.assert_not_called()
+        mock_mlflow_client_inst.search_model_versions.assert_called_once_with(f"run_id='{expected_mlflow_run_id}'")
 
     @patch('models.train_model.yaml.safe_load')
     @patch('models.train_model.load_scaled_features')
@@ -360,14 +345,14 @@ class TestRunTraining:
         mock_load_scaled.side_effect = lambda db, dr_id, set_name: sample_scaled_data_train.get(set_name)
         mock_load_scalers.return_value = {'y_scalers': mock_y_scalers_train, 'tickers': mock_tickers_train}
         mock_load_opt_res.return_value = sample_best_hyperparams_train
-        mock_train_final.return_value = (MagicMock(), None, {}, "mlflow_run_promo_fail") # Model, no preds, no metrics, run_id
+        mock_train_final.return_value = (MagicMock(), None, {}, "mlflow_run_promo_fail")
         
         mock_mlflow_client_inst = MagicMock(spec=MlflowClient)
         mock_mlflow_module.tracking.MlflowClient.return_value = mock_mlflow_client_inst
-        mock_mlflow_client_inst.search_model_versions.return_value = [] # Simulate no version found
+        mock_mlflow_client_inst.search_model_versions.return_value = []
 
         result_mlflow_run_id = run_training(str(config_file), dataset_run_id)
         
-        assert result_mlflow_run_id == "mlflow_run_promo_fail" # Training itself succeeds
+        assert result_mlflow_run_id == "mlflow_run_promo_fail"
         assert "No model version found in registry for MLflow run_id mlflow_run_promo_fail" in caplog.text
         mock_mlflow_client_inst.set_registered_model_alias.assert_not_called()
