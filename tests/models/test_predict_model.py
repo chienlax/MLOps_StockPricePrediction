@@ -132,7 +132,10 @@ class TestRunDailyPrediction:
 
         # --- MODIFIED torch.tensor mocking ---
         real_cpu_device = torch.device('cpu')
-        mock_torch.device.return_value = real_cpu_device # SUT's DEVICE will be 'cpu'
+        mock_torch.device.return_value = real_cpu_device
+
+        # Ensure that mock_torch.float32 returns the actual torch.float32 type
+        mock_torch.float32 = torch.float32 # <<< SOLUTION: ADD THIS LINE
 
         # mock_torch.tensor will be called by SUT: torch.tensor(numpy_array, dtype=torch.float32)
         # It should return a real tensor.
@@ -382,6 +385,7 @@ class TestRunDailyPrediction:
         mock_np_load.return_value = sample_input_sequence_np
         
         mock_torch.device.return_value = torch.device('cpu')
+        mock_torch.float32 = torch.float32
         mock_torch.tensor.side_effect = lambda data, dtype: torch.tensor(data, dtype=dtype) # Use real
         
         mock_torch.no_grad.return_value.__enter__.return_value = None
