@@ -161,8 +161,8 @@ class TestRunDailyPrediction:
 
         mock_model_instance = MagicMock(spec=torch.nn.Module)
         mock_model_instance.eval = MagicMock()
-        # Set up the __call__ method to return the output tensor
-        mock_model_instance.__call__.return_value = torch.tensor([[[0.5, 0.6]]], dtype=torch.float32)
+        # Configure what the model returns when called directly
+        mock_model_instance.return_value = torch.tensor([[[0.5, 0.6]]], dtype=torch.float32)
         # Configure mlflow to return this mock model
         mock_mlflow_module.pytorch.load_model.return_value = mock_model_instance
         # Configure .to() to return the same instance for chaining
@@ -476,9 +476,12 @@ class TestRunDailyPrediction:
         
         mock_model_instance = MagicMock(spec=torch.nn.Module)
         mock_model_instance.eval = MagicMock()
+        # Configure what the model returns when called directly
         mock_model_instance.return_value = torch.tensor([[[0.5, 0.6]]], dtype=torch.float32)
-        mock_model_instance.to.return_value = mock_model_instance
+        # Configure mlflow to return this mock model
         mock_mlflow_module.pytorch.load_model.return_value = mock_model_instance
+        # Configure .to() to return the same instance for chaining
+        mock_model_instance.to.return_value = mock_model_instance
         
         mock_load_scalers.return_value = {'y_scalers': mock_y_scalers_pred, 'tickers': mock_tickers_pred}
         mock_np_load.return_value = sample_input_sequence_np
