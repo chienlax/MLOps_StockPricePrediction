@@ -122,7 +122,9 @@ async def get_historical_context_for_prediction(ticker: str):
         num_historical_days = 14
         
         logger.info(f"Querying raw_stock_data for {ticker_upper} up to {history_end_date_for_db_query} for {num_historical_days} days.")
-        df_hist_from_db = get_raw_stock_data_for_period(DB_CONFIG, ticker_upper, history_end_date_for_db_query, num_historical_days)
+        df_hist_from_db = get_raw_stock_data_for_period(
+            DB_CONFIG, ticker_upper, history_end_date_for_db_query, num_historical_days
+            )
 
         if not df_hist_from_db.empty:
             for index, row in df_hist_from_db.iterrows():

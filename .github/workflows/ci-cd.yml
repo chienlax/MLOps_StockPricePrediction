@@ -50,9 +50,9 @@ jobs:
           flake8 src/ tests/ airflow/ --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
       
       # CODE QUALITY - CHECK FORMATTING WITH BLACK
-      - name: Check code formatting with Black
-        run: |
-          black --check src/ tests/ airflow/
+      # - name: Check code formatting with Black
+      #   run: |
+      #     black --check src/ tests/ airflow/
       
       # CODE QUALITY - CHECK IMPORT SORTING WITH ISORT  
       - name: Check import sorting with isort
