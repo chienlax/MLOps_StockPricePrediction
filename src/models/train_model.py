@@ -288,6 +288,14 @@ def run_training(config_path: str, run_id_arg: str) -> Optional[str]:
             
             # Get the registered model name from params.yaml (consistent with how it was registered)
             registered_model_name = mlflow_config.get('experiment_name', "Stock_Price_Prediction_LSTM_Refactored") # Or your specific registered model name key
+            try:
+                client.get_registered_model(registered_model_name)
+            except mlflow.exceptions.RestException as e:
+                if "RESOURCE_DOES_NOT_EXIST" in str(e):
+                    logger.info(f"Creating new registered model '{registered_model_name}'")
+                    client.create_registered_model(registered_model_name)
+                else:
+                    raise
 
             # Find the model version that was just created by this MLflow run
             # Search for model versions linked to the specific mlflow_model_run_id
