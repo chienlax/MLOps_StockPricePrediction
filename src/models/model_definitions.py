@@ -1,10 +1,27 @@
-# src/models/model_definitions.py
+"""Module containing PyTorch neural network model definitions for stock price prediction."""
+
 import torch
 import torch.nn as nn
-# Goal: Isolate the PyTorch nn.Module classes
+
 
 class StockLSTM(nn.Module):
+    """
+    Basic LSTM model for multi-stock price prediction.
+    
+    Takes sequence data for multiple stocks and predicts next price for all stocks.
+    """
+    
     def __init__(self, num_stocks, num_features, hidden_size, num_layers, dropout_rate=0.2):
+        """
+        Initialize the LSTM model.
+        
+        Args:
+            num_stocks: Number of stocks to predict
+            num_features: Number of features per stock
+            hidden_size: LSTM hidden layer size
+            num_layers: Number of LSTM layers
+            dropout_rate: Dropout probability for regularization
+        """
         super(StockLSTM, self).__init__()
         self.num_stocks = num_stocks
         self.hidden_size = hidden_size
@@ -23,6 +40,15 @@ class StockLSTM(nn.Module):
         self.fc = nn.Linear(hidden_size, num_stocks)  # Output for all stocks
         
     def forward(self, x):
+        """
+        Forward pass through the network.
+        
+        Args:
+            x: Input tensor of shape (batch_size, seq_len, num_stocks, num_features)
+            
+        Returns:
+            Predictions tensor of shape (batch_size, 1, num_stocks)
+        """
         batch_size, seq_len, n_stocks, n_features = x.size()
         # Reshape input for LSTM: (batch, seq_len, num_stocks * features)
         x = x.reshape(batch_size, seq_len, n_stocks * n_features)
@@ -42,7 +68,24 @@ class StockLSTM(nn.Module):
 
 
 class StockLSTMWithAttention(nn.Module):
+    """
+    LSTM model with self-attention for multi-stock price prediction.
+    
+    Enhances the basic LSTM by incorporating self-attention mechanism
+    to capture temporal dependencies.
+    """
+    
     def __init__(self, num_stocks, num_features, hidden_size, num_layers, dropout_rate=0.2):
+        """
+        Initialize the LSTM with attention model.
+        
+        Args:
+            num_stocks: Number of stocks to predict
+            num_features: Number of features per stock
+            hidden_size: LSTM hidden layer size
+            num_layers: Number of LSTM layers
+            dropout_rate: Dropout probability for regularization
+        """
         super(StockLSTMWithAttention, self).__init__()
         self.num_stocks = num_stocks
         self.hidden_size = hidden_size
@@ -71,6 +114,15 @@ class StockLSTMWithAttention(nn.Module):
         self.fc2 = nn.Linear(hidden_size // 2, num_stocks)
         
     def forward(self, x):
+        """
+        Forward pass through the network.
+        
+        Args:
+            x: Input tensor of shape (batch_size, seq_len, num_stocks, num_features)
+            
+        Returns:
+            Predictions tensor of shape (batch_size, 1, num_stocks)
+        """
         batch_size, seq_len, n_stocks, n_features = x.size()
         # Reshape input for LSTM: (batch, seq_len, num_stocks * features)
         x = x.reshape(batch_size, seq_len, n_stocks * n_features)
@@ -104,7 +156,24 @@ class StockLSTMWithAttention(nn.Module):
 
 
 class StockLSTMWithCrossStockAttention(nn.Module):
+    """
+    LSTM model with cross-stock attention for multi-stock price prediction.
+    
+    Uses separate LSTMs for each stock and applies attention across stocks
+    to capture inter-stock relationships.
+    """
+    
     def __init__(self, num_stocks, num_features, hidden_size, num_layers, dropout_rate=0.2):
+        """
+        Initialize the LSTM with cross-stock attention model.
+        
+        Args:
+            num_stocks: Number of stocks to predict
+            num_features: Number of features per stock
+            hidden_size: LSTM hidden layer size
+            num_layers: Number of LSTM layers
+            dropout_rate: Dropout probability for regularization
+        """
         super(StockLSTMWithCrossStockAttention, self).__init__()
         self.num_stocks = num_stocks
         self.num_features = num_features
@@ -134,6 +203,15 @@ class StockLSTMWithCrossStockAttention(nn.Module):
         self.fc = nn.Linear(hidden_size, 1)  # One output per stock
         
     def forward(self, x):
+        """
+        Forward pass through the network.
+        
+        Args:
+            x: Input tensor of shape (batch_size, seq_len, num_stocks, num_features)
+            
+        Returns:
+            Predictions tensor of shape (batch_size, 1, num_stocks)
+        """
         batch_size, seq_len, n_stocks, n_features = x.size()
         
         # Process each stock separately with its own LSTM

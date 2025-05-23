@@ -1,24 +1,32 @@
-import psycopg2
-import psycopg2.extras
-import logging
-import pickle
+"""Database utilities for stock price prediction operations."""
+
+# Standard library imports
 import io
+import logging
 import os
+import pickle
+from datetime import date, datetime, timedelta
+from decimal import Decimal
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+# Third-party imports
 import numpy as np
 import pandas as pd
-from pathlib import Path
-from datetime import datetime, timedelta, date
-from decimal import Decimal
-from typing import Optional, List, Dict
-from typing import Any
+import psycopg2
+import psycopg2.extras
 
+# Configure logging
 logger = logging.getLogger(__name__)
 if not logger.hasHandlers():
     handler = logging.StreamHandler()
     handler.setLevel(logging.INFO)
-    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    formatter = logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
     handler.setFormatter(formatter)
     logger.addHandler(handler)
+
 
 def get_db_connection(db_config: dict) -> psycopg2.extensions.connection:
     """Create a PostgreSQL database connection."""
@@ -35,7 +43,7 @@ def get_db_connection(db_config: dict) -> psycopg2.extensions.connection:
         logger.error(f"Error connecting to PostgreSQL database: {e}")
         raise
 
-# Create database tables if they don't exist
+
 def setup_database(db_config: dict) -> None:
     """Create PostgreSQL database tables if they don't exist."""
     try:
@@ -61,7 +69,9 @@ def setup_database(db_config: dict) -> None:
         ''')
         
         # Create index for performance
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_raw_ticker_date ON raw_stock_data (ticker, date)')
+        cursor.execute(
+            'CREATE INDEX IF NOT EXISTS idx_raw_ticker_date ON raw_stock_data (ticker, date)'
+        )
         
         # Processed feature data
         cursor.execute('''
@@ -94,35 +104,26 @@ def setup_database(db_config: dict) -> None:
         )
         ''')
 
-        # Latest predictions
-        # cursor.execute('''
-        # CREATE TABLE IF NOT EXISTS latest_predictions (
-        #     prediction_timestamp TIMESTAMP,
-        #     ticker TEXT NOT NULL,
-        #     predicted_price REAL,
-        #     model_run_id TEXT,
-        #     PRIMARY KEY (ticker)
-        # )
-        # ''')
-
-        # cursor.execute("DROP TABLE IF EXISTS latest_predictions CASCADE;") # Use with caution
+        # Latest predictions table
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS latest_predictions (
             target_prediction_date DATE NOT NULL, -- Date for which the prediction is made
             ticker TEXT NOT NULL,
             predicted_price REAL,
             model_mlflow_run_id TEXT,
-            prediction_logged_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP, -- When this record was logged
+            prediction_logged_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (target_prediction_date, ticker) -- Composite Primary Key
         )
         ''')
         logger.info("Ensured 'latest_predictions' table schema is up-to-date.")
-        # Add index if beneficial for querying by ticker and date
+        
+        # Add index for predictions
         cursor.execute('''
         CREATE INDEX IF NOT EXISTS idx_latest_predictions_ticker_target_date 
         ON latest_predictions (ticker, target_prediction_date DESC);
         ''')
 
+        # Optimization results
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS optimization_results (
             run_id TEXT PRIMARY KEY,
@@ -131,7 +132,7 @@ def setup_database(db_config: dict) -> None:
         )
         ''')
 
-        # add performance log table
+        # Performance log table
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS model_performance_log (
             log_id SERIAL PRIMARY KEY,
@@ -148,7 +149,10 @@ def setup_database(db_config: dict) -> None:
             UNIQUE (prediction_date, ticker, model_mlflow_run_id)
         )
         ''')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_perf_log_date_ticker ON model_performance_log (prediction_date, ticker)')
+        cursor.execute(
+            'CREATE INDEX IF NOT EXISTS idx_perf_log_date_ticker '
+            'ON model_performance_log (prediction_date, ticker)'
+        )
         
         conn.commit()
         cursor.close()
@@ -161,7 +165,7 @@ def setup_database(db_config: dict) -> None:
         raise
 
     finally:
-        if 'conn' in locals() and conn: # Ensure conn was defined
+        if 'conn' in locals() and conn:  # Ensure conn was defined
             if 'cursor' in locals() and cursor:
                 cursor.close()
             conn.close()
@@ -169,17 +173,27 @@ def setup_database(db_config: dict) -> None:
 
 def save_to_raw_table(ticker_symbol: str, data_df: pd.DataFrame, db_config: dict) -> int:
     """
-    Saves or updates raw ticker data in the database using batch insertion.
+    Save or update raw ticker data in the database using batch insertion.
+    
     Converts NumPy types to Python native types before insertion.
+    
+    Args:
+        ticker_symbol: Stock ticker symbol
+        data_df: DataFrame containing stock data
+        db_config: Database configuration dictionary
+        
+    Returns:
+        int: Number of processed rows
     """
     conn = None
     cursor = None
     
-    # Define the order of columns from the DataFrame to match the SQL query.
-    # yfinance DataFrame columns: 'Open', 'High', 'Low', 'Close', 'Volume', 'Dividends', 'Stock Splits'
-    df_cols_ordered = ['Open', 'High', 'Low', 'Close', 'Volume', 'Dividends', 'Stock Splits']
+    # Define the order of columns from the DataFrame to match the SQL query
+    df_cols_ordered = [
+        'Open', 'High', 'Low', 'Close', 'Volume', 'Dividends', 'Stock Splits'
+    ]
 
-    # SQL for batch insert/update (ticker, date, open, high, low, close, volume, dividends, stock_splits)
+    # SQL for batch insert/update
     sql_upsert = """
         INSERT INTO raw_stock_data 
             (ticker, date, open, high, low, close, volume, dividends, stock_splits)
@@ -195,32 +209,31 @@ def save_to_raw_table(ticker_symbol: str, data_df: pd.DataFrame, db_config: dict
     """
     rows_to_upsert = []
     for date_index, row in data_df.iterrows():
-        # date_index is typically a pandas.Timestamp, which psycopg2 handles well.
-        
-        current_row_values = [ticker_symbol, date_index] # ticker, date
+        # date_index is typically a pandas.Timestamp, which psycopg2 handles well
+        current_row_values = [ticker_symbol, date_index]  # ticker, date
         
         for col_name in df_cols_ordered:
             value = row[col_name]
             if pd.isna(value):
                 current_row_values.append(None)
             # isinstance(value, np.generic) catches most numpy scalar types
-            elif isinstance(value, np.floating): # e.g., np.float16, np.float32, np.float64
+            elif isinstance(value, np.floating):  # np.float16, np.float32, np.float64
                 current_row_values.append(float(value))
-            elif isinstance(value, np.integer): # e.g., np.int8, np.int16, np.int32, np.int64
+            elif isinstance(value, np.integer):  # np.int8, np.int16, np.int32, np.int64
                 current_row_values.append(int(value))
-            elif isinstance(value, (float, int)): # Already a Python native numeric type
+            elif isinstance(value, (float, int)):  # Python native numeric types
                 current_row_values.append(value)
             else:
-                # For other types, log a warning and consider how to handle.
-                # If your REAL columns get non-numeric types, it will cause SQL errors.
+                # For other types, log a warning and consider how to handle
                 logger.warning(
-                    f"Unexpected data type for {ticker_symbol} - {col_name} on {date_index}: {type(value)}, value: {value}. "
+                    f"Unexpected data type for {ticker_symbol} - {col_name} on "
+                    f"{date_index}: {type(value)}, value: {value}. "
                     f"Attempting to cast to float, or inserting NULL."
                 )
                 try:
-                    current_row_values.append(float(value)) # Try to cast, might fail
+                    current_row_values.append(float(value))  # Try to cast
                 except (ValueError, TypeError):
-                    current_row_values.append(None) # Fallback to NULL if cast fails
+                    current_row_values.append(None)  # Fallback to NULL if cast fails
 
         rows_to_upsert.append(tuple(current_row_values))
 
@@ -235,26 +248,28 @@ def save_to_raw_table(ticker_symbol: str, data_df: pd.DataFrame, db_config: dict
         # Use executemany for batch upsert
         cursor.executemany(sql_upsert, rows_to_upsert)
         
-        # cursor.rowcount for executemany with ON CONFLICT might not be reliable
-        # for counting actual inserts vs. updates across all DB drivers/versions.
-        # It often returns the number of rows *matched* by the statement.
-        # If an exact count of new vs. updated is critical, more complex logic is needed.
-        # For now, we'll assume success if no error.
         num_processed_rows = len(rows_to_upsert) 
         
         conn.commit()
-        logger.info(f"Successfully upserted {num_processed_rows} data points for {ticker_symbol} into database.")
-        # The number of *actually added or updated* rows can be tricky with ON CONFLICT.
-        # The simplest is to report num_processed_rows as "attempted".
-        return num_processed_rows # Or a more accurate count if you can determine it.
+        logger.info(
+            f"Successfully upserted {num_processed_rows} data points for "
+            f"{ticker_symbol} into database."
+        )
+        return num_processed_rows
 
     except psycopg2.Error as e_db:
-        logger.error(f"Database error during batch upsert for {ticker_symbol}: {e_db}", exc_info=True)
+        logger.error(
+            f"Database error during batch upsert for {ticker_symbol}: {e_db}",
+            exc_info=True
+        )
         if conn:
-            conn.rollback() # Rollback the entire batch on any error
-        raise # Re-raise to indicate failure to the calling function
+            conn.rollback()  # Rollback the entire batch on any error
+        raise  # Re-raise to indicate failure to the calling function
     except Exception as e_general:
-        logger.error(f"General error during batch upsert for {ticker_symbol}: {e_general}", exc_info=True)
+        logger.error(
+            f"General error during batch upsert for {ticker_symbol}: {e_general}",
+            exc_info=True
+        )
         if conn:
             conn.rollback()
         raise
@@ -264,9 +279,11 @@ def save_to_raw_table(ticker_symbol: str, data_df: pd.DataFrame, db_config: dict
         if conn:
             conn.close()
 
+
 def serialize_numpy(array: np.ndarray) -> bytes:
     """Serialize numpy array to bytes using pickle."""
     return pickle.dumps(array)
+
 
 def check_ticker_exists(ticker: str, db_config: dict) -> bool:
     """Check if ticker data already exists in the database."""
@@ -281,6 +298,7 @@ def check_ticker_exists(ticker: str, db_config: dict) -> bool:
     except Exception as e:
         logger.error(f"Error checking if ticker exists: {e}", exc_info=True)
         return False
+
 
 def load_data_from_db(db_config: dict, tickers_list: list) -> dict:
     """Load ticker data from PostgreSQL database into DataFrames."""
@@ -302,10 +320,15 @@ def load_data_from_db(db_config: dict, tickers_list: list) -> dict:
                 continue
                 
             df.set_index('date', inplace=True)
-            df.columns = ['Open', 'High', 'Low', 'Close', 'Volume', 'Dividends', 'Stock Splits']
+            df.columns = [
+                'Open', 'High', 'Low', 'Close', 'Volume', 'Dividends', 'Stock Splits'
+            ]
             
             if not df.empty:
-                logger.info(f"Loaded {len(df)} records for {t} from {df.index.min()} to {df.index.max()}")
+                logger.info(
+                    f"Loaded {len(df)} records for {t} from "
+                    f"{df.index.min()} to {df.index.max()}"
+                )
                 ticker_data[t] = df
         
         if not ticker_data:
@@ -323,9 +346,15 @@ def load_data_from_db(db_config: dict, tickers_list: list) -> dict:
         logger.error(f"Error loading data from database: {e}", exc_info=True)
         raise
 
-def save_processed_features_to_db(db_config: dict, processed_data: np.ndarray, 
-                                targets: np.ndarray, feature_columns: list, 
-                                tickers: list, run_id: Optional[str] = None) -> str:
+
+def save_processed_features_to_db(
+    db_config: dict,
+    processed_data: np.ndarray, 
+    targets: np.ndarray,
+    feature_columns: list, 
+    tickers: list,
+    run_id: Optional[str] = None
+) -> str:
     """Save processed feature data to PostgreSQL database."""
     try:
         import json
@@ -362,7 +391,10 @@ def save_processed_features_to_db(db_config: dict, processed_data: np.ndarray,
         logger.error(f"Error saving processed feature data: {e}", exc_info=True)
         raise
 
-def load_processed_features_from_db(db_config: dict, run_id: Optional[str] = None) -> Optional[dict]:
+
+def load_processed_features_from_db(
+    db_config: dict, run_id: Optional[str] = None
+) -> Optional[dict]:
     """Load processed feature data from PostgreSQL database."""
     try:
         import json
@@ -387,7 +419,10 @@ def load_processed_features_from_db(db_config: dict, run_id: Optional[str] = Non
         conn.close()
         
         if result is None:
-            logger.warning(f"No processed feature data found{' for run_id: ' + run_id if run_id else ''}")
+            logger.warning(
+                f"No processed feature data found"
+                f"{' for run_id: ' + run_id if run_id else ''}"
+            )
             return None
             
         run_id, processed_data_blob, targets_blob, feature_columns_json, tickers_json = result
@@ -404,7 +439,10 @@ def load_processed_features_from_db(db_config: dict, run_id: Optional[str] = Non
         logger.error(f"Error loading processed feature data: {e}", exc_info=True)
         raise
 
-def save_scaled_features(db_config: dict, run_id: str, set_name: str, data: np.ndarray) -> bool:
+
+def save_scaled_features(
+    db_config: dict, run_id: str, set_name: str, data: np.ndarray
+) -> bool:
     """Save scaled feature set to PostgreSQL database."""
     try:
         conn = get_db_connection(db_config)
@@ -430,7 +468,10 @@ def save_scaled_features(db_config: dict, run_id: str, set_name: str, data: np.n
         logger.error(f"Error saving scaled feature set: {e}", exc_info=True)
         raise
 
-def load_scaled_features(db_config: dict, run_id: str, set_name: str) -> Optional[np.ndarray]:
+
+def load_scaled_features(
+    db_config: dict, run_id: str, set_name: str
+) -> Optional[np.ndarray]:
     """Load scaled feature set from PostgreSQL database."""
     try:
         conn = get_db_connection(db_config)
@@ -454,6 +495,7 @@ def load_scaled_features(db_config: dict, run_id: str, set_name: str) -> Optiona
     except Exception as e:
         logger.error(f"Error loading scaled feature set: {e}", exc_info=True)
         raise
+
 
 def save_scalers(db_config: dict, run_id: str, scalers_dict: dict) -> bool:
     """Save scalers to PostgreSQL database."""
@@ -481,6 +523,7 @@ def save_scalers(db_config: dict, run_id: str, scalers_dict: dict) -> bool:
         logger.error(f"Error saving scalers: {e}", exc_info=True)
         raise
 
+
 def load_scalers(db_config: dict, run_id: str) -> Optional[dict]:
     """Load scalers from PostgreSQL database."""
     try:
@@ -502,6 +545,7 @@ def load_scalers(db_config: dict, run_id: str) -> Optional[dict]:
     except Exception as e:
         logger.error(f"Error loading scalers: {e}", exc_info=True)
         raise
+
 
 def save_optimization_results(db_config: dict, run_id: str, best_params: dict) -> bool:
     """Save optimization results to PostgreSQL database."""
@@ -530,6 +574,7 @@ def save_optimization_results(db_config: dict, run_id: str, best_params: dict) -
         logger.error(f"Error saving optimization results: {e}", exc_info=True)
         raise
 
+
 def load_optimization_results(db_config: dict, run_id: str) -> Optional[dict]:
     """Load optimization results from PostgreSQL database."""
     try:
@@ -537,7 +582,10 @@ def load_optimization_results(db_config: dict, run_id: str) -> Optional[dict]:
         conn = get_db_connection(db_config)
         cursor = conn.cursor()
         
-        cursor.execute("SELECT best_params_json FROM optimization_results WHERE run_id = %s", (run_id,))
+        cursor.execute(
+            "SELECT best_params_json FROM optimization_results WHERE run_id = %s", 
+            (run_id,)
+        )
         
         result = cursor.fetchone()
         cursor.close()
@@ -553,40 +601,59 @@ def load_optimization_results(db_config: dict, run_id: str) -> Optional[dict]:
         logger.error(f"Error loading optimization results: {e}", exc_info=True)
         raise
 
+
 def save_prediction(
     db_config: dict, 
     ticker: str, 
     predicted_price: float, 
     model_mlflow_run_id: Optional[str],
-    target_prediction_date_str: str # NEW PARAMETER (expecting 'YYYY-MM-DD')
+    target_prediction_date_str: str  # Expecting 'YYYY-MM-DD'
 ) -> bool:
     """
     Save a prediction for a ticker for a specific target date to PostgreSQL database.
+    
     Updates if a prediction for that ticker and target_date already exists.
+    
+    Args:
+        db_config: Database configuration dictionary
+        ticker: Stock ticker symbol
+        predicted_price: Predicted price value
+        model_mlflow_run_id: MLflow run ID of the model used
+        target_prediction_date_str: Date for which prediction is made ('YYYY-MM-DD')
+        
+    Returns:
+        bool: True if successful
     """
     try:
         conn = get_db_connection(db_config)
         cursor = conn.cursor()
         
-        # --- MODIFIED SQL and parameters ---
         cursor.execute('''
         INSERT INTO latest_predictions 
-        (target_prediction_date, ticker, predicted_price, model_mlflow_run_id, prediction_logged_timestamp)
+        (target_prediction_date, ticker, predicted_price, model_mlflow_run_id, 
+         prediction_logged_timestamp)
         VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)
         ON CONFLICT (target_prediction_date, ticker) DO UPDATE SET
             predicted_price = EXCLUDED.predicted_price,
             model_mlflow_run_id = EXCLUDED.model_mlflow_run_id,
             prediction_logged_timestamp = CURRENT_TIMESTAMP 
         ''', (target_prediction_date_str, ticker, predicted_price, model_mlflow_run_id))
-        # --- END MODIFIED ---
         
         conn.commit()
-        logger.info(f"Saved/Updated prediction for {ticker} (Target Date: {target_prediction_date_str}): {predicted_price:.4f} (Model Run: {model_mlflow_run_id})")
+        logger.info(
+            f"Saved/Updated prediction for {ticker} "
+            f"(Target Date: {target_prediction_date_str}): "
+            f"{predicted_price:.4f} (Model Run: {model_mlflow_run_id})"
+        )
         return True
     
     except Exception as e:
-        logger.error(f"Error saving prediction for {ticker} (Target Date: {target_prediction_date_str}): {e}", exc_info=True)
-        raise # Or return False
+        logger.error(
+            f"Error saving prediction for {ticker} "
+            f"(Target Date: {target_prediction_date_str}): {e}",
+            exc_info=True
+        )
+        raise  # Or return False
 
     finally:
         if 'conn' in locals() and conn:
@@ -594,7 +661,6 @@ def save_prediction(
                 cursor.close()
             conn.close()
 
-# -----------------------------------------------------------
 
 def get_latest_predictions(db_config: dict, tickers: Optional[list] = None) -> dict:
     """Get latest predictions from PostgreSQL database."""
@@ -635,19 +701,26 @@ def get_latest_predictions(db_config: dict, tickers: Optional[list] = None) -> d
         logger.error(f"Error getting latest predictions: {e}", exc_info=True)
         raise
 
-# ------------------------------------------------------------
 
 def get_prediction_for_date_ticker(
     db_config: dict, 
-    target_date_str: str, # 'YYYY-MM-DD'
+    target_date_str: str,  # 'YYYY-MM-DD'
     ticker: str
 ) -> Optional[dict]:
     """
-    Retrieves the predicted price and model_mlflow_run_id for a specific ticker and target date.
+    Retrieve the predicted price and model_mlflow_run_id for a specific ticker and target date.
+    
+    Args:
+        db_config: Database configuration dictionary
+        target_date_str: Target prediction date string ('YYYY-MM-DD')
+        ticker: Stock ticker symbol
+        
+    Returns:
+        Optional[dict]: Dictionary with prediction info or None if not found
     """
     try:
         conn = get_db_connection(db_config)
-        cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor) # Use DictCursor for easy column access by name
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
         
         cursor.execute("""
             SELECT predicted_price, model_mlflow_run_id
@@ -658,29 +731,39 @@ def get_prediction_for_date_ticker(
         result = cursor.fetchone()
         
         if result:
-            return dict(result) # Convert DictRow to dict
+            return dict(result)  # Convert DictRow to dict
         else:
             return None
     except Exception as e:
-        logger.error(f"Error getting prediction for {ticker} on {target_date_str}: {e}", exc_info=True)
-        return None # Or raise
+        logger.error(
+            f"Error getting prediction for {ticker} on {target_date_str}: {e}",
+            exc_info=True
+        )
+        return None  # Or raise
     finally:
         if 'conn' in locals() and conn:
             if 'cursor' in locals() and cursor:
                 cursor.close()
             conn.close()
 
-# ------------------------------------------------------------
 
 def get_predictions_for_ticker_in_daterange(
     db_config: dict, 
     ticker: str, 
-    start_date_str: str, # 'YYYY-MM-DD'
-    end_date_str: str    # 'YYYY-MM-DD'
+    start_date_str: str,  # 'YYYY-MM-DD'
+    end_date_str: str     # 'YYYY-MM-DD'
 ) -> pd.DataFrame:
     """
-    Retrieves all predictions (target_prediction_date, predicted_price) for a ticker
-    within a specified date range. Returns a Pandas DataFrame.
+    Retrieve all predictions for a ticker within a specified date range.
+    
+    Args:
+        db_config: Database configuration dictionary
+        ticker: Stock ticker symbol
+        start_date_str: Start date string ('YYYY-MM-DD')
+        end_date_str: End date string ('YYYY-MM-DD')
+        
+    Returns:
+        pd.DataFrame: DataFrame with prediction results
     """
     try:
         conn = get_db_connection(db_config)
@@ -693,23 +776,34 @@ def get_predictions_for_ticker_in_daterange(
               AND target_prediction_date <= %s
             ORDER BY target_prediction_date ASC;
         """
-        df = pd.read_sql_query(query, conn, params=(ticker.upper(), start_date_str, end_date_str))
+        df = pd.read_sql_query(
+            query, conn, params=(ticker.upper(), start_date_str, end_date_str)
+        )
         # Ensure target_prediction_date is datetime object for merging
         if not df.empty:
             df['target_prediction_date'] = pd.to_datetime(df['target_prediction_date'])
         return df
     except Exception as e:
-        logger.error(f"Error getting predictions for {ticker} in range {start_date_str}-{end_date_str}: {e}", exc_info=True)
-        return pd.DataFrame() # Return empty DataFrame on error
+        logger.error(
+            f"Error getting predictions for {ticker} in range "
+            f"{start_date_str}-{end_date_str}: {e}",
+            exc_info=True
+        )
+        return pd.DataFrame()  # Return empty DataFrame on error
     finally:
         if 'conn' in locals() and conn:
             conn.close()
 
-# ------------------------------------------------------------
 
-def get_all_distinct_tickers_from_predictions(db_config: dict) -> list[str]:
+def get_all_distinct_tickers_from_predictions(db_config: dict) -> list:
     """
-    Retrieves a list of all unique ticker symbols from the latest_predictions table.
+    Retrieve a list of all unique ticker symbols from the latest_predictions table.
+    
+    Args:
+        db_config: Database configuration dictionary
+        
+    Returns:
+        list: List of unique ticker symbols
     """
     try:
         conn = get_db_connection(db_config)
@@ -724,16 +818,22 @@ def get_all_distinct_tickers_from_predictions(db_config: dict) -> list[str]:
         return []
     finally:
         if 'conn' in locals() and conn:
-            if 'cursor' in locals() and cursor: # Ensure cursor was defined
+            if 'cursor' in locals() and cursor:  # Ensure cursor was defined
                 cursor.close()
             conn.close()
 
-# ------------------------------------------------------------
 
-def get_latest_prediction_for_all_tickers(db_config: dict) -> list[dict]:
+def get_latest_prediction_for_all_tickers(db_config: dict) -> list:
     """
-    Retrieves the most recent prediction for every ticker from the latest_predictions table.
+    Retrieve the most recent prediction for every ticker from the latest_predictions table.
+    
     A prediction is defined as "latest" by the most recent target_prediction_date.
+    
+    Args:
+        db_config: Database configuration dictionary
+        
+    Returns:
+        list: List of dictionaries with latest prediction data for each ticker
     """
     try:
         conn = get_db_connection(db_config)
@@ -741,8 +841,7 @@ def get_latest_prediction_for_all_tickers(db_config: dict) -> list[dict]:
         cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor) 
         
         # Query to get the latest prediction for each ticker
-        # Uses DISTINCT ON which is specific to PostgreSQL and efficient for this.
-        # For other DBs, ROW_NUMBER() OVER (PARTITION BY ... ORDER BY ...) would be used.
+        # Uses DISTINCT ON which is specific to PostgreSQL and efficient for this
         query = """
             SELECT DISTINCT ON (ticker) 
                    ticker, 
@@ -761,21 +860,41 @@ def get_latest_prediction_for_all_tickers(db_config: dict) -> list[dict]:
                 "ticker": row["ticker"],
                 "predicted_price": row["predicted_price"],
                 # Format date to string if it's a date object from DB
-                "date": row["target_prediction_date"].isoformat() if isinstance(row["target_prediction_date"], date) else str(row["target_prediction_date"]),
+                "date": (
+                    row["target_prediction_date"].isoformat()
+                    if isinstance(row["target_prediction_date"], date) 
+                    else str(row["target_prediction_date"])
+                ),
                 "model_mlflow_run_id": row["model_mlflow_run_id"]
             })
         return predictions_list
         
     except Exception as e:
-        logger.error(f"Error getting latest predictions for all tickers from DB: {e}", exc_info=True)
-        return [] # Return empty list on error
+        logger.error(
+            f"Error getting latest predictions for all tickers from DB: {e}",
+            exc_info=True
+        )
+        return []  # Return empty list on error
     finally:
         if 'conn' in locals() and conn:
             if 'cursor' in locals() and cursor:
                 cursor.close()
             conn.close()
 
-def get_latest_target_date_prediction_for_ticker(db_config: dict, ticker: str) -> Optional[dict]:
+
+def get_latest_target_date_prediction_for_ticker(
+    db_config: dict, ticker: str
+) -> Optional[dict]:
+    """
+    Retrieve the latest prediction for a specific ticker.
+    
+    Args:
+        db_config: Database configuration dictionary
+        ticker: Stock ticker symbol
+        
+    Returns:
+        Optional[dict]: Latest prediction info or None if not found
+    """
     conn = None
     cursor = None
     try:
@@ -794,7 +913,12 @@ def get_latest_target_date_prediction_for_ticker(db_config: dict, ticker: str) -
         
         if result:
             # Log exactly what is being fetched
-            logger.info(f"DB_UTILS: Fetched for {ticker}: target_date={result['target_prediction_date']}, raw_predicted_price={result['predicted_price']} (type: {type(result['predicted_price'])})")
+            logger.info(
+                f"DB_UTILS: Fetched for {ticker}: "
+                f"target_date={result['target_prediction_date']}, "
+                f"raw_predicted_price={result['predicted_price']} "
+                f"(type: {type(result['predicted_price'])})"
+            )
 
             predicted_price_val = result["predicted_price"]
             final_predicted_price = None
@@ -806,21 +930,36 @@ def get_latest_target_date_prediction_for_ticker(db_config: dict, ticker: str) -
                 else:
                     try:
                         final_predicted_price = float(predicted_price_val)
-                        logger.warning(f"DB_UTILS: predicted_price for {ticker} was type {type(predicted_price_val)}, successfully cast to float.")
+                        logger.warning(
+                            f"DB_UTILS: predicted_price for {ticker} was type "
+                            f"{type(predicted_price_val)}, successfully cast to float."
+                        )
                     except (ValueError, TypeError):
-                        logger.error(f"DB_UTILS: Could not convert predicted_price '{predicted_price_val}' (type: {type(predicted_price_val)}) to float for {ticker}. Setting to None.")
+                        logger.error(
+                            f"DB_UTILS: Could not convert predicted_price "
+                            f"'{predicted_price_val}' (type: {type(predicted_price_val)}) "
+                            f"to float for {ticker}. Setting to None."
+                        )
                         final_predicted_price = None
             
             return {
-                "target_prediction_date": result["target_prediction_date"].isoformat() if isinstance(result["target_prediction_date"], date) else str(result["target_prediction_date"]),
-                "predicted_price": final_predicted_price, # Use the processed value
+                "target_prediction_date": (
+                    result["target_prediction_date"].isoformat()
+                    if isinstance(result["target_prediction_date"], date)
+                    else str(result["target_prediction_date"])
+                ),
+                "predicted_price": final_predicted_price,  # Use the processed value
                 "model_mlflow_run_id": result["model_mlflow_run_id"]
             }
         else:
             logger.info(f"DB_UTILS: No prediction found for {ticker}.")
             return None
     except Exception as e:
-        logger.error(f"DB_UTILS: Error in get_latest_target_date_prediction_for_ticker for {ticker}: {e}", exc_info=True)
+        logger.error(
+            f"DB_UTILS: Error in get_latest_target_date_prediction_for_ticker "
+            f"for {ticker}: {e}",
+            exc_info=True
+        )
         return None
     finally:
         if cursor:
@@ -828,10 +967,21 @@ def get_latest_target_date_prediction_for_ticker(db_config: dict, ticker: str) -
         if conn:
             conn.close()
 
-def get_raw_stock_data_for_period(db_config: dict, ticker: str, end_date_obj: date, num_days: int) -> pd.DataFrame:
+
+def get_raw_stock_data_for_period(
+    db_config: dict, ticker: str, end_date_obj: date, num_days: int
+) -> pd.DataFrame:
     """
-    Retrieves raw stock data (date, close) for a ticker for a specified number of trading days
-    ending on or before the end_date_obj from the raw_stock_data table.
+    Retrieve raw stock data for a ticker for a specified number of trading days.
+    
+    Args:
+        db_config: Database configuration dictionary
+        ticker: Stock ticker symbol
+        end_date_obj: End date object
+        num_days: Number of days to retrieve
+        
+    Returns:
+        pd.DataFrame: DataFrame with raw stock data
     """
     conn = None
     try:
@@ -846,11 +996,17 @@ def get_raw_stock_data_for_period(db_config: dict, ticker: str, end_date_obj: da
         df = pd.read_sql_query(query, conn, params=(ticker.upper(), end_date_obj, num_days))
         
         if not df.empty:
-            df['date'] = pd.to_datetime(df['date']) # Ensure date is datetime
-            df = df.sort_values(by='date', ascending=True).reset_index(drop=True) # Chronological
-            logger.info(f"Fetched {len(df)} raw_stock_data points for {ticker} ending on/before {end_date_obj} for chart.")
+            df['date'] = pd.to_datetime(df['date'])  # Ensure date is datetime
+            df = df.sort_values(by='date', ascending=True).reset_index(drop=True)
+            logger.info(
+                f"Fetched {len(df)} raw_stock_data points for {ticker} "
+                f"ending on/before {end_date_obj} for chart."
+            )
         else:
-            logger.warning(f"No raw_stock_data found for {ticker} for chart period ending {end_date_obj}.")
+            logger.warning(
+                f"No raw_stock_data found for {ticker} for chart period "
+                f"ending {end_date_obj}."
+            )
         return df
 
     except Exception as e:
@@ -860,63 +1016,35 @@ def get_raw_stock_data_for_period(db_config: dict, ticker: str, end_date_obj: da
         if conn:
             conn.close()
 
-# ------------------------------------------------------------
 
-# def get_latest_target_date_prediction_for_ticker(db_config: dict, ticker: str) -> Optional[dict]:
-#     """
-#     Retrieves the most recent prediction (latest target_prediction_date)
-#     for a single specified ticker.
-#     """
-#     try:
-#         conn = get_db_connection(db_config)
-#         cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-        
-#         query = """
-#             SELECT target_prediction_date, predicted_price, model_mlflow_run_id
-#             FROM latest_predictions
-#             WHERE ticker = %s
-#             ORDER BY target_prediction_date DESC
-#             LIMIT 1;
-#         """
-#         cursor.execute(query, (ticker.upper(),))
-#         result = cursor.fetchone()
-        
-#         if result:
-#             return {
-#                 "target_prediction_date": result["target_prediction_date"].isoformat() if isinstance(result["target_prediction_date"], date) else str(result["target_prediction_date"]),
-#                 "predicted_price": result["predicted_price"],
-#                 "model_mlflow_run_id": result["model_mlflow_run_id"]
-#             }
-#         else:
-#             return None
-            
-#     except Exception as e:
-#         logger.error(f"Error getting latest target date prediction for {ticker} from DB: {e}", exc_info=True)
-#         return None
-#     finally:
-#         if 'conn' in locals() and conn:
-#             if 'cursor' in locals() and cursor:
-#                 cursor.close()
-#             conn.close()
-
-# ------------------------------------------------------------
-
-# Save daily performance metrics to the database
 def save_daily_performance_metrics(
     db_config: dict,
-    prediction_date: str, # Expecting 'YYYY-MM-DD' string
+    prediction_date: str,  # Expecting 'YYYY-MM-DD' string
     ticker: str,
     metrics_dict: Dict[str, float],
     model_mlflow_run_id: str
 ) -> bool:
-    """Save daily model performance metrics to the database."""
+    """
+    Save daily model performance metrics to the database.
+    
+    Args:
+        db_config: Database configuration dictionary
+        prediction_date: Prediction date string ('YYYY-MM-DD')
+        ticker: Stock ticker symbol
+        metrics_dict: Dictionary of performance metrics
+        model_mlflow_run_id: MLflow run ID of the model
+        
+    Returns:
+        bool: True if successful
+    """
     try:
         conn = get_db_connection(db_config)
         cursor = conn.cursor()
         
         cursor.execute('''
         INSERT INTO model_performance_log
-        (prediction_date, ticker, actual_price, predicted_price, mae, rmse, mape, direction_accuracy, model_mlflow_run_id)
+        (prediction_date, ticker, actual_price, predicted_price, mae, rmse, 
+         mape, direction_accuracy, model_mlflow_run_id)
         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT (prediction_date, ticker, model_mlflow_run_id) DO UPDATE SET
             actual_price = EXCLUDED.actual_price,
@@ -939,35 +1067,56 @@ def save_daily_performance_metrics(
         ))
         
         conn.commit()
-        logger.info(f"Saved performance metrics for {ticker} on {prediction_date} (Model Run ID: {model_mlflow_run_id})")
+        logger.info(
+            f"Saved performance metrics for {ticker} on {prediction_date} "
+            f"(Model Run ID: {model_mlflow_run_id})"
+        )
         return True
     except Exception as e:
-        logger.error(f"Error saving daily performance metrics for {ticker} on {prediction_date}: {e}", exc_info=True)
-        # Consider re-raising or returning False based on desired error handling
-        # For now, let's re-raise to make issues visible during development
+        logger.error(
+            f"Error saving daily performance metrics for {ticker} on "
+            f"{prediction_date}: {e}",
+            exc_info=True
+        )
         raise
     finally:
         if 'conn' in locals() and conn:
             cursor.close()
             conn.close()
 
-# Get recent performance metrics for a ticker
-def get_recent_performance_metrics(db_config: dict, ticker: str, days_lookback: int) -> pd.DataFrame:
-    """Retrieve recent performance metrics for a ticker."""
+
+def get_recent_performance_metrics(
+    db_config: dict, ticker: str, days_lookback: int
+) -> pd.DataFrame:
+    """
+    Retrieve recent performance metrics for a ticker.
+    
+    Args:
+        db_config: Database configuration dictionary
+        ticker: Stock ticker symbol
+        days_lookback: Number of days to look back
+        
+    Returns:
+        pd.DataFrame: DataFrame with performance metrics
+    """
     try:
         conn = get_db_connection(db_config)
         end_date = datetime.now().date()
         start_date = end_date - timedelta(days=days_lookback)
         
         query = """
-            SELECT prediction_date, actual_price, predicted_price, mae, rmse, mape, direction_accuracy, model_mlflow_run_id
+            SELECT prediction_date, actual_price, predicted_price, mae, rmse, 
+                   mape, direction_accuracy, model_mlflow_run_id
             FROM model_performance_log
             WHERE ticker = %s AND prediction_date >= %s AND prediction_date <= %s
             ORDER BY prediction_date DESC
         """
         df = pd.read_sql_query(query, conn, params=(ticker, start_date, end_date))
         
-        logger.info(f"Retrieved {len(df)} recent performance records for {ticker} (last {days_lookback} days)")
+        logger.info(
+            f"Retrieved {len(df)} recent performance records for {ticker} "
+            f"(last {days_lookback} days)"
+        )
         return df
     except Exception as e:
         logger.error(f"Error getting recent performance metrics for {ticker}: {e}", exc_info=True)
@@ -976,8 +1125,18 @@ def get_recent_performance_metrics(db_config: dict, ticker: str, days_lookback: 
         if 'conn' in locals() and conn:
             conn.close()
 
+
 def get_last_data_timestamp_for_ticker(db_config: dict, ticker: str) -> Optional[datetime]:
-    """Get the timestamp of the latest data point for a ticker in raw_stock_data."""
+    """
+    Get the timestamp of the latest data point for a ticker in raw_stock_data.
+    
+    Args:
+        db_config: Database configuration dictionary
+        ticker: Stock ticker symbol
+        
+    Returns:
+        Optional[datetime]: Latest timestamp or None if not found
+    """
     try:
         conn = get_db_connection(db_config)
         cursor = conn.cursor()
@@ -987,7 +1146,7 @@ def get_last_data_timestamp_for_ticker(db_config: dict, ticker: str) -> Optional
         
         if result and result[0]:
             logger.debug(f"Last data timestamp for {ticker}: {result[0]}")
-            return result[0] # This will be a datetime object if 'date' column is TIMESTAMP
+            return result[0]  # This will be a datetime object if 'date' column is TIMESTAMP
         else:
             logger.info(f"No data found for {ticker}, will fetch full history.")
             return None
@@ -999,29 +1158,36 @@ def get_last_data_timestamp_for_ticker(db_config: dict, ticker: str) -> Optional
             cursor.close()
             conn.close()
 
-def get_latest_raw_data_window(db_config: dict, tickers_list: list, window_size_days: int) -> dict:
+
+def get_latest_raw_data_window(
+    db_config: dict, tickers_list: list, window_size_days: int
+) -> dict:
     """
-    Load the most recent 'window_size_days' of raw data for specified tickers.
-    Returns a dictionary of DataFrames {ticker: df}.
+    Load the most recent data window for specified tickers.
+    
+    Args:
+        db_config: Database configuration dictionary
+        tickers_list: List of stock ticker symbols
+        window_size_days: Number of days in the window
+        
+    Returns:
+        dict: Dictionary of DataFrames {ticker: df}
     """
     try:
         conn = get_db_connection(db_config)
         ticker_data_window = {}
         
         for t in tickers_list:
-            # Fetch a bit more to ensure we have enough after potential gaps, then take tail
-            # For simplicity, let's fetch N days and sort, then take tail.
-            # A more optimized SQL might use window functions or `ORDER BY date DESC LIMIT N`.
             query = """
                 SELECT date, open, high, low, close, volume, dividends, stock_splits 
                 FROM raw_stock_data 
                 WHERE ticker = %s 
                 ORDER BY date DESC
                 LIMIT %s 
-            """ 
-            # Fetch slightly more if TA calculations need prior data points not included in window_size_days
-            # For now, let's assume window_size_days is sufficient for TA on that window.
-            df = pd.read_sql_query(query, conn, params=(t, window_size_days), parse_dates=['date'])
+            """
+            df = pd.read_sql_query(
+                query, conn, params=(t, window_size_days), parse_dates=['date']
+            )
             
             if df.empty:
                 logger.warning(f"No raw data found in DB for {t} to create latest window.")
@@ -1032,7 +1198,10 @@ def get_latest_raw_data_window(db_config: dict, tickers_list: list, window_size_
             df.columns = ['Open', 'High', 'Low', 'Close', 'Volume', 'Dividends', 'Stock Splits']
             
             if len(df) < window_size_days:
-                logger.warning(f"Fetched {len(df)} records for {t}, less than requested window {window_size_days}.")
+                logger.warning(
+                    f"Fetched {len(df)} records for {t}, less than requested "
+                    f"window {window_size_days}."
+                )
 
             ticker_data_window[t] = df
             logger.info(f"Loaded latest {len(df)} records for {t} for prediction input.")
