@@ -1,12 +1,13 @@
 # tests/features/test_build_features.py
 import sys
 from pathlib import Path
-import pytest
-from unittest.mock import patch, MagicMock, call
+from unittest.mock import MagicMock, call, patch
+
 import numpy as np
-import pandas as pd # Though not directly used by build_features, good for sample data context
+import pandas as pd  # Though not directly used by build_features, good for sample data context
+import pytest
 import yaml
-from sklearn.preprocessing import MinMaxScaler # For type hinting and understanding
+from sklearn.preprocessing import MinMaxScaler  # For type hinting and understanding
 
 # Add src to sys.path
 PROJECT_ROOT_FOR_TESTS = Path(__file__).resolve().parents[2]
@@ -14,7 +15,7 @@ SRC_PATH = PROJECT_ROOT_FOR_TESTS / "src"
 if str(SRC_PATH) not in sys.path:
     sys.path.insert(0, str(SRC_PATH))
 
-from features import build_features # Import the module
+from features import build_features  # Import the module
 
 # --- Fixtures ---
 

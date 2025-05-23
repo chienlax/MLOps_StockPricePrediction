@@ -9,7 +9,7 @@ import os
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Optional, Tuple, Any
+from typing import Any, Dict, Optional, Tuple
 
 # Third-party imports
 import numpy as np
@@ -22,25 +22,25 @@ from torch.utils.data import DataLoader, TensorDataset
 
 # Local imports
 try:
+    from .evaluate_model import evaluate_model
     from .model_definitions import (
         StockLSTM,
         StockLSTMWithAttention,
-        StockLSTMWithCrossStockAttention
+        StockLSTMWithCrossStockAttention,
     )
-    from .evaluate_model import evaluate_model
 except ImportError:
+    from evaluate_model import evaluate_model
     from model_definitions import (
         StockLSTM,
         StockLSTMWithAttention,
-        StockLSTMWithCrossStockAttention
+        StockLSTMWithCrossStockAttention,
     )
-    from evaluate_model import evaluate_model
 
 try:
     from src.utils.db_utils import (
         load_scaled_features,
         load_scalers,
-        save_optimization_results
+        save_optimization_results,
     )
 except ImportError:
     sys.path.append(str(Path(__file__).resolve().parents[1]))
@@ -48,7 +48,7 @@ except ImportError:
         get_db_connection,
         load_scaled_features,
         load_scalers,
-        save_optimization_results
+        save_optimization_results,
     )
 
 # Configure logging

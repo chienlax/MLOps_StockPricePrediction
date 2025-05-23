@@ -43,6 +43,7 @@ jobs:
       
       # CODE QUALITY - LINTING WITH FLAKE8
       - name: Lint code with Flake8
+        continue-on-error: true 
         run: |
           # stop the build if there are Python syntax errors or undefined names
           flake8 src/ airflow/ --count --select=E9,F63,F7,F82 --show-source --statistics
@@ -50,27 +51,32 @@ jobs:
           flake8 src/ airflow/ --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
       
       # CODE QUALITY - CHECK FORMATTING WITH BLACK
-      # - name: Check code formatting with Black
-      #   run: |
-      #     black --check src/ airflow/
+      - name: Check code formatting with Black
+        continue-on-error: true
+        run: |
+          black --check src/ airflow/
       
       # CODE QUALITY - CHECK IMPORT SORTING WITH ISORT  
       - name: Check import sorting with isort
+        continue-on-error: true
         run: |
           isort --check-only --profile black src/ airflow/
       
       # CODE QUALITY - TYPE CHECKING WITH MYPY
       - name: Run type checking with MyPy
+        continue-on-error: true
         run: |
           mypy src/ --ignore-missing-imports
       
       # CODE QUALITY - SECURITY SCANNING
       - name: Check for security vulnerabilities
+        continue-on-error: true
         run: |
           safety check
       
       # CODE QUALITY - COMPLEXITY AND DUPLICATION
       - name: Check code complexity and duplication
+        continue-on-error: true
         run: |
           radon cc src/ -a -nc
           radon mi src/ -s

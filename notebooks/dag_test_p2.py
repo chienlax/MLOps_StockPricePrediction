@@ -1,17 +1,17 @@
 # airflow/dags/temp_phase2_daily_ops_test_dag.py
 from __future__ import annotations
 
-import pendulum
-from pathlib import Path
+import logging
 import os
 import subprocess
-import logging
-import yaml
+from pathlib import Path
 
+import mlflow  # For MlflowClient interaction
+import pendulum
+import yaml
 from airflow.models.dag import DAG
 from airflow.operators.bash import BashOperator
 from airflow.operators.python import PythonOperator
-import mlflow # For MlflowClient interaction
 from mlflow.tracking import MlflowClient
 
 log = logging.getLogger(__name__)

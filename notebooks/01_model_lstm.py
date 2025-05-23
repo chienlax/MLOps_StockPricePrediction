@@ -1,20 +1,22 @@
 # %%
 # %pip install --quiet yfinance ta optuna torch scikit-learn matplotlib 
-import yfinance as yf
-import numpy as np
-import pandas as pd
+import time
+
 import matplotlib.pyplot as plt
-from sklearn.preprocessing import MinMaxScaler
-from sklearn.metrics import mean_squared_error, mean_absolute_percentage_error
+import mlflow
+import mlflow.pytorch
+import numpy as np
+import optuna
+import pandas as pd
+import ta
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import Dataset, DataLoader
-import time
-import ta
-import optuna
-import mlflow
-import mlflow.pytorch
+import yfinance as yf
+from sklearn.metrics import mean_absolute_percentage_error, mean_squared_error
+from sklearn.preprocessing import MinMaxScaler
+from torch.utils.data import DataLoader, Dataset
+
 
 # %%
 def load_data(tickers_list, period="3y", interval="1d"):

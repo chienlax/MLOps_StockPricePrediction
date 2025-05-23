@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import sys
+import yaml
 from datetime import date
 from pathlib import Path
 
@@ -34,7 +35,7 @@ if not logger.handlers:
     handler = logging.StreamHandler()
     handler.setLevel(logging.INFO)
     formatter = logging.Formatter(
-        '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     )
     handler.setFormatter(formatter)
     logger.addHandler(handler)
@@ -46,7 +47,7 @@ def run_daily_prediction(
     input_sequence_path: str,
     production_model_uri_for_loading: str,
     production_model_base_name: str,
-    production_model_version_number: str
+    production_model_version_number: str,
 ) -> bool:
     """
     Load the production model, make predictions on the prepared input sequence, and save results.
@@ -62,18 +63,18 @@ def run_daily_prediction(
         bool: True if prediction process succeeds, False otherwise
     """
     try:
-        with open(config_path, 'r') as f:
+        with open(config_path, "r") as f:
             cfg = yaml.safe_load(f)
 
-        db_config = cfg['database']
-        mlflow_cfg = cfg['mlflow']
-        predictions_base_dir_str = cfg.get('output_paths', {}).get(
-            'predictions_dir', 'data/predictions'
+        db_config = cfg["database"]
+        mlflow_cfg = cfg["mlflow"]
+        predictions_base_dir_str = cfg.get("output_paths", {}).get(
+            "predictions_dir", "data/predictions"
         )
         predictions_base_dir = Path(predictions_base_dir_str)
-        
+
         mlflow_tracking_uri = os.environ.get(
-            'MLFLOW_TRACKING_URI', mlflow_cfg.get('tracking_uri')
+            "MLFLOW_TRACKING_URI", mlflow_cfg.get("tracking_uri")
         )
         if not mlflow_tracking_uri:
             logger.error("MLFLOW_TRACKING_URI is not set.")
@@ -82,7 +83,9 @@ def run_daily_prediction(
         logger.info(f"Using MLflow Tracking URI: {mlflow_tracking_uri}")
 
         # 1. Load the production model from MLflow Model Registry using the provided URI
-        logger.info(f"Loading production model from URI: {production_model_uri_for_loading}")
+        logger.info(
+            f"Loading production model from URI: {production_model_uri_for_loading}"
+        )
         try:
             model_pytorch = mlflow.pytorch.load_model(
                 model_uri=production_model_uri_for_loading
@@ -92,32 +95,33 @@ def run_daily_prediction(
             logger.error(
                 f"Failed to load model from {production_model_uri_for_loading}: "
                 f"{e_load_model}",
-                exc_info=True
+                exc_info=True,
             )
             return False
-        
+
         # 2. Get the training run_id and dataset_run_id associated with this production model version
         client = MlflowClient()
         prod_model_dataset_run_id = None
-        prod_model_origin_mlflow_run_id = None 
+        prod_model_origin_mlflow_run_id = None
 
         try:
             # We now have the base name and version directly
             model_version_details = client.get_model_version(
-                name=production_model_base_name,
-                version=production_model_version_number
+                name=production_model_base_name, version=production_model_version_number
             )
-            
+
             prod_model_origin_mlflow_run_id = model_version_details.run_id
             logger.info(
                 f"Production model (Version: {production_model_version_number}, "
                 f"Name: {production_model_base_name}) was trained with MLflow Run ID: "
                 f"{prod_model_origin_mlflow_run_id}"
             )
-            
+
             mlflow_run_details = client.get_run(prod_model_origin_mlflow_run_id)
-            prod_model_dataset_run_id = mlflow_run_details.data.params.get("dataset_run_id")
-            
+            prod_model_dataset_run_id = mlflow_run_details.data.params.get(
+                "dataset_run_id"
+            )
+
             if not prod_model_dataset_run_id:
                 logger.error(
                     f"Parameter 'dataset_run_id' not found in MLflow Run "
@@ -133,7 +137,7 @@ def run_daily_prediction(
             logger.error(
                 f"Error fetching metadata for production model {production_model_base_name} "
                 f"version {production_model_version_number}: {e_mlflow_meta}",
-                exc_info=True
+                exc_info=True,
             )
             return False
 
@@ -143,23 +147,23 @@ def run_daily_prediction(
             f"{prod_model_dataset_run_id}"
         )
         scalers_dict = load_scalers(db_config, prod_model_dataset_run_id)
-        if not scalers_dict or 'y_scalers' not in scalers_dict:
+        if not scalers_dict or "y_scalers" not in scalers_dict:
             logger.error(
                 f"Failed to load y_scalers for dataset_run_id: {prod_model_dataset_run_id}"
             )
             return False
-        y_scalers = scalers_dict['y_scalers']
-        tickers = scalers_dict.get('tickers')
+        y_scalers = scalers_dict["y_scalers"]
+        tickers = scalers_dict.get("tickers")
         if not tickers:
             processed_features_meta = load_processed_features_from_db(
                 db_config, prod_model_dataset_run_id
             )
-            if not processed_features_meta or 'tickers' not in processed_features_meta:
+            if not processed_features_meta or "tickers" not in processed_features_meta:
                 logger.error(
                     f"Failed to load tickers for dataset_run_id: {prod_model_dataset_run_id}"
                 )
                 return False
-            tickers = processed_features_meta['tickers']
+            tickers = processed_features_meta["tickers"]
         if len(y_scalers) != len(tickers):
             logger.error(
                 f"Mismatch between number of y_scalers ({len(y_scalers)}) and "
@@ -211,10 +215,12 @@ def run_daily_prediction(
                 f"Min: {predictions_scaled_tensor.min()}, "
                 f"Max: {predictions_scaled_tensor.max()}"
             )
-        logger.info(f"Shape of predictions_scaled_tensor: {predictions_scaled_tensor.shape}")
+        logger.info(
+            f"Shape of predictions_scaled_tensor: {predictions_scaled_tensor.shape}"
+        )
 
         predictions_scaled_np = predictions_scaled_tensor.cpu().numpy()
-        
+
         if np.isnan(predictions_scaled_np).any():
             logger.warning(
                 f"!!! Scaled prediction numpy array CONTAINS NaNs: {predictions_scaled_np}"
@@ -225,7 +231,7 @@ def run_daily_prediction(
         predicted_prices_final = {}
         for stock_idx, ticker_name in enumerate(tickers):
             scaled_pred_value = predictions_scaled_np[0, 0, stock_idx]
-            
+
             logger.info(
                 f"Ticker: {ticker_name}, Scaled Predicted Value before inverse_transform: "
                 f"{scaled_pred_value}"
@@ -254,33 +260,35 @@ def run_daily_prediction(
 
         today_iso = date.today().isoformat()
 
-        # 7. Save predictions to JSON files (KEEPING THIS FOR API for now)
+        # 7. Save predictions to JSON files
         predictions_base_dir.mkdir(parents=True, exist_ok=True)
-        historical_dir = predictions_base_dir / 'historical'
+        historical_dir = predictions_base_dir / "historical"
         historical_dir.mkdir(parents=True, exist_ok=True)
         payload_json = {
             "date": today_iso,
             "predictions": predicted_prices_final,
-            "model_mlflow_run_id": prod_model_origin_mlflow_run_id
+            "model_mlflow_run_id": prod_model_origin_mlflow_run_id,
         }
-        latest_file_path = predictions_base_dir / 'latest_predictions.json'
-        with open(latest_file_path, 'w+') as f:
+        latest_file_path = predictions_base_dir / "latest_predictions.json"
+        with open(latest_file_path, "w+") as f:
             json.dump(payload_json, f, indent=4)
         logger.info(f"Saved latest predictions to JSON: {latest_file_path}")
         historical_file_path = historical_dir / f"{today_iso}.json"
-        with open(historical_file_path, 'w') as f:
+        with open(historical_file_path, "w") as f:
             json.dump(payload_json, f, indent=4)
         logger.info(f"Saved historical predictions to JSON: {historical_file_path}")
 
         # 8. Save predictions to PostgreSQL database
-        logger.info("Saving predictions to PostgreSQL database (with target_prediction_date)...")
+        logger.info(
+            "Saving predictions to PostgreSQL database (with target_prediction_date)..."
+        )
         for ticker_name, predicted_price_val in predicted_prices_final.items():
             save_prediction(
                 db_config,
                 ticker_name,
                 predicted_price_val,
                 prod_model_origin_mlflow_run_id,  # model_mlflow_run_id
-                today_iso  # target_prediction_date_str: prediction is for "today"
+                today_iso,  # target_prediction_date_str: prediction is for "today"
             )
         logger.info("Successfully saved predictions to database.")
 
@@ -291,43 +299,40 @@ def run_daily_prediction(
         return False
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Make daily stock predictions using the production model."
     )
     parser.add_argument(
-        '--config',
-        type=str,
-        default='config/params.yaml',
-        help='Path to params.yaml'
+        "--config", type=str, default="config/params.yaml", help="Path to params.yaml"
     )
     parser.add_argument(
-        '--input_sequence_path',
+        "--input_sequence_path",
         type=str,
         required=True,
-        help='Path to the .npy input sequence.'
+        help="Path to the .npy input sequence.",
     )
-    
+
     # These will now be pulled from XComs by the DAG task
     parser.add_argument(
-        '--production_model_uri_for_loading',
+        "--production_model_uri_for_loading",
         type=str,
         required=True,
-        help='MLflow Model URI for loading (e.g., models:/MyModel@Alias or models:/MyModel/Version).'
+        help="MLflow Model URI for loading (e.g., models:/MyModel@Alias or models:/MyModel/Version).",
     )
     parser.add_argument(
-        '--production_model_base_name',
+        "--production_model_base_name",
         type=str,
         required=True,
-        help='Base registered model name.'
+        help="Base registered model name.",
     )
     parser.add_argument(
-        '--production_model_version_number',
+        "--production_model_version_number",
         type=str,
         required=True,
-        help='Specific version number of the production model.'
+        help="Specific version number of the production model.",
     )
-    
+
     args = parser.parse_args()
 
     config_path_resolved = Path(args.config).resolve()  # Simplified for brevity
@@ -346,7 +351,7 @@ if __name__ == '__main__':
         str(input_sequence_path_resolved),
         args.production_model_uri_for_loading,
         args.production_model_base_name,
-        args.production_model_version_number
+        args.production_model_version_number,
     )
 
     if success:

@@ -4,7 +4,12 @@ import torch
 
 # Assuming model_definitions.py is in src/models and src is in PYTHONPATH
 # If not, adjust sys.path or use relative imports if tests are structured as a package
-from models.model_definitions import StockLSTM, StockLSTMWithAttention, StockLSTMWithCrossStockAttention
+from models.model_definitions import (
+    StockLSTM,
+    StockLSTMWithAttention,
+    StockLSTMWithCrossStockAttention,
+)
+
 
 # --- Fixtures for Model Parameters ---
 @pytest.fixture

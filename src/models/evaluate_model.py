@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 if not logger.handlers:
     handler = logging.StreamHandler()
     formatter = logging.Formatter(
-        '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     )
     handler.setFormatter(formatter)
     logger.addHandler(handler)
@@ -27,14 +27,14 @@ if not logger.handlers:
 def evaluate_model(model, test_loader, criterion, y_scalers, device):
     """
     Evaluate the model and return predictions and metrics.
-    
+
     Args:
         model: The neural network model to evaluate
         test_loader: DataLoader containing test data
         criterion: Loss function
         y_scalers: List of scalers for inverse transforming predictions
         device: Computation device (CPU/GPU)
-        
+
     Returns:
         Tuple of (predictions, targets, metrics)
     """
@@ -67,28 +67,28 @@ def evaluate_model(model, test_loader, criterion, y_scalers, device):
         predictions = np.empty((0, 1, num_stocks))
         targets = np.empty((0, 1, num_stocks))
         metrics = {
-            'test_loss': avg_test_loss,
-            'mse_per_stock': [np.nan] * num_stocks,
-            'mape_per_stock': [np.nan] * num_stocks,
-            'direction_accuracy': [np.nan] * num_stocks,
-            'avg_mse': np.nan,
-            'avg_mape': np.nan,
-            'avg_direction_accuracy': np.nan
+            "test_loss": avg_test_loss,
+            "mse_per_stock": [np.nan] * num_stocks,
+            "mape_per_stock": [np.nan] * num_stocks,
+            "direction_accuracy": [np.nan] * num_stocks,
+            "avg_mse": np.nan,
+            "avg_mape": np.nan,
+            "avg_direction_accuracy": np.nan,
         }
         logger.warning(
             "Test loader was empty or produced no data. Returning NaN metrics."
         )
         return predictions, targets, metrics
-        
+
     predictions = np.vstack(all_predictions)
     targets = np.vstack(all_targets)
 
     # Calculate additional metrics
     metrics = {
-        'test_loss': avg_test_loss,
-        'mse_per_stock': [],
-        'mape_per_stock': [],
-        'direction_accuracy': []
+        "test_loss": avg_test_loss,
+        "mse_per_stock": [],
+        "mape_per_stock": [],
+        "direction_accuracy": [],
     }
 
     # Transform back to original scale and calculate metrics per stock
@@ -130,15 +130,15 @@ def evaluate_model(model, test_loader, criterion, y_scalers, device):
                 direction_accuracy = np.nan
         else:
             direction_accuracy = np.nan
-        
-        metrics['mse_per_stock'].append(mse)
-        metrics['mape_per_stock'].append(mape)
-        metrics['direction_accuracy'].append(direction_accuracy)
+
+        metrics["mse_per_stock"].append(mse)
+        metrics["mape_per_stock"].append(mape)
+        metrics["direction_accuracy"].append(direction_accuracy)
 
     # Use nanmean to handle NaN values
-    metrics['avg_mse'] = np.nanmean(metrics['mse_per_stock'])
-    metrics['avg_mape'] = np.nanmean(metrics['mape_per_stock'])
-    metrics['avg_direction_accuracy'] = np.nanmean(metrics['direction_accuracy'])
+    metrics["avg_mse"] = np.nanmean(metrics["mse_per_stock"])
+    metrics["avg_mape"] = np.nanmean(metrics["mape_per_stock"])
+    metrics["avg_direction_accuracy"] = np.nanmean(metrics["direction_accuracy"])
 
     return predictions, targets, metrics
 
@@ -148,7 +148,7 @@ def visualize_predictions(
 ):
     """
     Visualize predictions vs actual values for each stock.
-    
+
     Args:
         predictions: Model predictions
         targets: Actual target values
@@ -171,7 +171,7 @@ def visualize_predictions(
         num_points_to_plot = predictions.shape[0]
     else:
         num_points_to_plot = num_points
-        
+
     if num_points_to_plot == 0:
         logger.warning("No data points to plot in visualize_predictions.")
         return
@@ -187,19 +187,21 @@ def visualize_predictions(
 
         # Plot
         plt.figure(figsize=(12, 6))
-        plt.plot(true_stock, label=f'Actual Price ({tickers[stock_idx]})', color='blue')
-        plt.plot(pred_stock, label=f'Predicted Price ({tickers[stock_idx]})', color='red')
-        plt.title(
-            f'Actual vs. Predicted Price for {tickers[stock_idx]} '
-            f'(Last {num_points_to_plot} Timesteps)'
+        plt.plot(true_stock, label=f"Actual Price ({tickers[stock_idx]})", color="blue")
+        plt.plot(
+            pred_stock, label=f"Predicted Price ({tickers[stock_idx]})", color="red"
         )
-        plt.xlabel('Timestep')
-        plt.ylabel('Price')
+        plt.title(
+            f"Actual vs. Predicted Price for {tickers[stock_idx]} "
+            f"(Last {num_points_to_plot} Timesteps)"
+        )
+        plt.xlabel("Timestep")
+        plt.ylabel("Price")
         plt.legend()
         plt.grid(True)
 
         # Save figure for MLflow
-        plt_path = output_dir_path / f'prediction_{tickers[stock_idx]}.png'
+        plt_path = output_dir_path / f"prediction_{tickers[stock_idx]}.png"
         # Pass Path object directly
         plt.savefig(plt_path)
         try:
@@ -207,9 +209,7 @@ def visualize_predictions(
             # Log artifact to active MLflow run
             mlflow.log_artifact(str(plt_path))
         except Exception as e:
-            logger.warning(
-                f"Could not log artifact {plt_path} to MLflow. Error: {e}"
-            )
+            logger.warning(f"Could not log artifact {plt_path} to MLflow. Error: {e}")
             logger.warning(
                 "Ensure an MLflow run is active when calling visualize_predictions."
             )

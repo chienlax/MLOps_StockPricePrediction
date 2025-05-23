@@ -1,14 +1,16 @@
 # tests/models/test_evaluate_model.py
+import logging  # --- ADDED: To check log messages ---
+from pathlib import Path
+from unittest.mock import MagicMock, call, patch
+
+import numpy as np
 import pytest
-from unittest.mock import patch, MagicMock, call
 import torch
 import torch.nn as nn
-import numpy as np
-from pathlib import Path
-from sklearn.preprocessing import MinMaxScaler # For spec
+from sklearn.preprocessing import MinMaxScaler  # For spec
 
 from models.evaluate_model import evaluate_model, visualize_predictions
-import logging # --- ADDED: To check log messages ---
+
 
 # --- Fixtures ---
 @pytest.fixture

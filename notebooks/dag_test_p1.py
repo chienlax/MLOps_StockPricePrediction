@@ -1,14 +1,14 @@
 # airflow/dags/lstm_refactored_dag.py
 from __future__ import annotations
 
-import pendulum
-from pathlib import Path
-import os
-import subprocess 
 import logging
+import os
+import subprocess
+from pathlib import Path
 
+import pendulum
 from airflow.models.dag import DAG
-from airflow.operators.bash import BashOperator # We'll still use it for some tasks
+from airflow.operators.bash import BashOperator  # We'll still use it for some tasks
 from airflow.operators.python import PythonOperator
 
 # Setup logging for Airflow context
@@ -27,6 +27,7 @@ TRAIN_SCRIPT = PROJECT_ROOT / 'src/models/train_model.py'
 def callable_initialize_database(**kwargs):
     """Python callable to initialize the PostgreSQL database."""
     import yaml
+
     # Since this runs in Airflow, direct import of your project's utils should work
     # if /opt/airflow (PROJECT_ROOT) is effectively in PYTHONPATH or structure allows.
     # To be safe, ensure PYTHONPATH includes /opt/airflow or use relative imports carefully.

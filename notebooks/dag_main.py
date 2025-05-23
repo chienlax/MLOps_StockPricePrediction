@@ -1,13 +1,14 @@
 # airflow/dags/lstm_refactored_dag.py
 from __future__ import annotations
 
-import pendulum
-from pathlib import Path
 import os
+from pathlib import Path
 
+import pendulum
 from airflow.models.dag import DAG
 from airflow.operators.bash import BashOperator
 from airflow.operators.python import PythonOperator
+
 from src.utils.db_utils import setup_database
 
 # Define project paths used within the container

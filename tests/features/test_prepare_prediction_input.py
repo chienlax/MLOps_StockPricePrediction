@@ -1,14 +1,15 @@
 # tests/features/test_prepare_prediction_input.py
+import io  # Needed for mocking file objects
 import sys
+from datetime import date, datetime, timedelta  # For sample data
 from pathlib import Path
-import pytest
-from unittest.mock import patch, MagicMock, call
+from unittest.mock import MagicMock, call, patch
+
 import numpy as np
 import pandas as pd
+import pytest
 import yaml
-from sklearn.preprocessing import MinMaxScaler # For type hinting and understanding
-from datetime import datetime, timedelta, date # For sample data
-import io # Needed for mocking file objects
+from sklearn.preprocessing import MinMaxScaler  # For type hinting and understanding
 
 # Add src to sys.path
 PROJECT_ROOT_FOR_TESTS = Path(__file__).resolve().parents[2]
@@ -16,8 +17,7 @@ SRC_PATH = PROJECT_ROOT_FOR_TESTS / "src"
 if str(SRC_PATH) not in sys.path:
     sys.path.insert(0, str(SRC_PATH))
 
-from features import prepare_prediction_input # Import the module
-
+from features import prepare_prediction_input  # Import the module
 
 # --- Fixtures ---
 
