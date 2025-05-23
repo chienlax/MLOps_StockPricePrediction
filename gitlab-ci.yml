@@ -1,0 +1,137 @@
+# .gitlab-ci.yml
+
+# ... (Các phần stages và deploy_to_server như cũ) ...
+
+deploy_to_server:
+  stage: deploy
+  image: ubuntu:latest
+  before_script:
+    - echo "Installing dependencies..."
+    - apt-get update -y
+    - apt-get install -y openssh-client curl docker.io
+
+    # --- DÒNG DEBUG QUAN TRỌNG NHẤT ---
+    - echo "--- Nội dung .gitlab-ci.yml đang được Runner sử dụng ---"
+    - cat .gitlab-ci.yml
+    - echo "--- Kết thúc nội dung .gitlab-ci.yml ---"
+    # --- KẾT THÚC DÒNG DEBUG QUAN TRỌNG NHẤT ---
+
+    - echo "Downloading and installing cloudflared..."
+    - curl -LO https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64
+    - chmod +x cloudflared-linux-amd64
+    - mv cloudflared-linux-amd64 /usr/local/bin/cloudflared
+
+    - echo "Verifying cloudflared installation..."
+    - which cloudflared
+    - cloudflared --version
+    - ls -l /usr/local/bin/cloudflared
+    - echo "Cloudflared verification complete."
+
+    - echo "Setting up SSH key and config..."
+    - mkdir -p ~/.ssh
+    - chmod 700 ~/.ssh
+
+    # Thay vì echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa, chúng ta sẽ decode Base64
+    - echo "$SSH_PRIVATE_KEY_BASE64" | base64 -d > ~/.ssh/id_rsa
+
+    - chmod 600 ~/.ssh/id_rsa
+
+    # BẮT ĐẦU CÁC DÒNG DEBUG CHO KEY (để so sánh)
+    - echo "--- Nội dung id_rsa được tạo trên Runner (sau khi decode) ---"
+    - cat ~/.ssh/id_rsa | head -n 10
+    - cat ~/.ssh/id_rsa | tail -n 5
+    - echo "--- Kết thúc nội dung id_rsa ---"
+    - echo "--- Kiểm tra tính hợp lệ của SSH key được tạo ---"
+    - ssh-keygen -lf ~/.ssh/id_rsa
+    - echo "--- Kết thúc kiểm tra SSH key ---"
+
+    - echo -e "Host $SSH_HOST\n  Hostname $SSH_HOST\n  User $SSH_USERNAME\n  IdentityFile ~/.ssh/id_rsa\n  ProxyCommand cloudflared access ssh --hostname %h\n  StrictHostKeyChecking no\n  UserKnownHostsFile /dev/null\n" > ~/.ssh/config
+    - chmod 600 ~/.ssh/config
+
+  script:
+    - echo "Attempting to connect to $SSH_USERNAME@$SSH_HOST and deploy..."
+    - echo "Debug SSH_USERNAME is $SSH_USERNAME"
+    - echo "Debug SSH_HOST is $SSH_HOST"
+    - echo "Debug PROJECT_PATH_ON_SERVER is $PROJECT_PATH_ON_SERVER"
+    - echo "Debug DOCKERHUB_USERNAME is $DOCKERHUB_USERNAME"
+    - echo "--- DEBUG SSH Config ---"
+    - cat ~/.ssh/config
+    - echo "--- END SSH Config ---"
+    
+    # Test cloudflared connection
+    - echo "--- DEBUG Testing cloudflared connection ---"
+    - timeout 30 cloudflared access ssh --hostname $SSH_HOST --dry-run || echo "Cloudflared test failed"
+    - echo "--- END cloudflared test ---"
+    
+    # Test SSH connection with verbose output
+    - echo "--- DEBUG Testing SSH connection ---"
+    - ssh -vvv -o ConnectTimeout=30 -o ServerAliveInterval=15 -o ServerAliveCountMax=3 "$SSH_USERNAME@$SSH_HOST" "echo 'SSH connection successful'" || echo "SSH test failed"
+    - echo "--- END SSH test ---"
+    
+    # Hết các dòng DEBUG
+    # Hết các dòng DEBUG
+    - |
+      ssh -o ConnectTimeout=10 -o ServerAliveInterval=15 -o ServerAliveCountMax=3 "$SSH_USERNAME@$SSH_HOST" "
+        set -e
+
+        echo 'Changing directory to project path...'
+        cd \"$PROJECT_PATH_ON_SERVER\" || { echo 'Error: Project directory not found on server. Path: $PROJECT_PATH_ON_SERVER'; exit 1; }
+
+  
+        # --- BẮT ĐẦU PHẦN CÀI ĐẶT DOCKER-COMPOSE TRÊN REMOTE SERVER ---
+        echo 'Debugging SSH user and sudo access...';
+        whoami;
+        id;
+        sudo -n whoami || echo 'SUDO FAILED';
+        echo '--- End SSH user and sudo debug ---'
+        
+
+        # --- CÀI ĐẶT DOCKER VÀ DOCKER COMPOSE V2 --- 
+        echo 'Installing Docker and Docker Compose v2 on remote server...'
+        
+        # Cập nhật package list
+        sudo apt-get update
+        
+        # Cài đặt Docker nếu chưa có
+        if ! command -v docker &> /dev/null; then
+            echo 'Installing Docker...'
+            sudo apt-get install -y docker.io
+            sudo systemctl start docker
+            sudo systemctl enable docker
+            sudo usermod -aG docker \$USER
+        fi
+        
+        # Cài đặt Docker Compose v2 plugin
+        if ! docker compose version &> /dev/null; then
+            echo 'Installing Docker Compose v2 plugin...'
+            sudo apt-get install -y docker-compose-plugin
+        fi
+        
+        # Kiểm tra phiên bản
+        echo 'Docker version:'
+        docker --version
+        echo 'Docker Compose version:'
+        docker compose version
+
+        mkdir -p ~/.docker
+        echo '{}' > ~/.docker/config.json   # Khởi tạo file JSON hợp lệ rỗng
+
+        echo 'Logging into Docker Hub on remote server...'
+        echo \"$DOCKERHUB_PAT\" | docker login -u \"$DOCKERHUB_USERNAME\" --password-stdin
+
+        echo 'Pulling latest Docker images from Docker Hub...'
+        docker pull \"$DOCKERHUB_USERNAME\"/stockpred-app:latest
+        docker pull \"$DOCKERHUB_USERNAME\"/stockpred-frontend:latest
+
+        echo 'Stopping existing Docker Compose services (if any)...'
+        docker compose down || true
+
+        echo 'Deploying new services with Docker Compose v2...'
+        docker compose up -d
+
+        echo 'Checking Docker Compose services status on server...'
+        docker compose ps
+        " 
+  only:
+    - main
+    - dev
