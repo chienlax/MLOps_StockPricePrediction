@@ -1,17 +1,19 @@
 # tests/models/test_train_model.py
+from pathlib import Path
+from unittest.mock import ANY, MagicMock, call, patch  # Use unittest.mock.ANY
+
+import mlflow
+import numpy as np
 import pytest
-from unittest.mock import patch, MagicMock, call, ANY # Use unittest.mock.ANY
 import torch
 import torch.nn as nn
-import numpy as np
 import yaml
-from pathlib import Path
-import mlflow 
 from mlflow.entities import Run as MlflowRun
 from mlflow.entities.model_registry import ModelVersion as MlflowModelVersion
-from mlflow.tracking import MlflowClient # Import MlflowClient for spec
+from mlflow.tracking import MlflowClient  # Import MlflowClient for spec
 
-from models.train_model import train_final_model, run_training
+from models.train_model import run_training, train_final_model
+
 
 @pytest.fixture
 def mock_db_config_train():

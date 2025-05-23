@@ -1,18 +1,25 @@
 # tests/models/test_predict_model.py
-import sys
-from pathlib import Path
-import pytest
-from unittest.mock import patch, MagicMock, call, ANY, mock_open # Added mock_open for completeness if needed
-import numpy as np
-import yaml
 import json
-import torch
+import sys
+from datetime import date
+from pathlib import Path
+from unittest.mock import (  # Added mock_open for completeness if needed
+    ANY,
+    MagicMock,
+    call,
+    mock_open,
+    patch,
+)
+
 import mlflow
-from mlflow.tracking import MlflowClient
+import numpy as np
+import pytest
+import torch
+import yaml
 from mlflow.entities import Run as MlflowRun
 from mlflow.entities.model_registry import ModelVersion as MlflowModelVersion
+from mlflow.tracking import MlflowClient
 from sklearn.preprocessing import MinMaxScaler
-from datetime import date
 
 PROJECT_ROOT_FOR_TESTS = Path(__file__).resolve().parents[2]
 SRC_PATH = PROJECT_ROOT_FOR_TESTS / "src"
@@ -20,6 +27,7 @@ if str(SRC_PATH) not in sys.path:
     sys.path.insert(0, str(SRC_PATH))
 
 from models import predict_model
+
 
 # Placed at the module level for clarity
 def mock_path_factory_universal(path_arg_str_or_mock):

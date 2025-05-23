@@ -1,20 +1,21 @@
 # tests/data/test_make_dataset.py
-import sys
-from pathlib import Path
-import pytest
-from unittest.mock import patch, MagicMock, call
-import pandas as pd
-import numpy as np
-from datetime import datetime, timedelta, date
-import yaml
 import io
+import sys
+from datetime import date, datetime, timedelta
+from pathlib import Path
+from unittest.mock import MagicMock, call, patch
+
+import numpy as np
+import pandas as pd
+import pytest
+import yaml
 
 PROJECT_ROOT_FOR_TESTS = Path(__file__).resolve().parents[2]
 SRC_PATH = PROJECT_ROOT_FOR_TESTS / "src"
 if str(SRC_PATH) not in sys.path:
     sys.path.insert(0, str(SRC_PATH))
 
-from data import make_dataset # Import the module to be tested
+from data import make_dataset  # Import the module to be tested
 
 # --- Fixtures ---
 

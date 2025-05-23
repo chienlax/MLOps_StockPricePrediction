@@ -1,19 +1,26 @@
 # tests/models/test_optimize_hyperparams.py
-import pytest
-from unittest.mock import patch, MagicMock, call, ANY
-from sklearn.preprocessing import MinMaxScaler
-import torch
-import torch.nn as nn
-import numpy as np
-import yaml
+import io
 import json
 from pathlib import Path
-import optuna
-import io
-from torch.utils.data import DataLoader as TorchDataLoader, TensorDataset as TorchTensorDataset
+from unittest.mock import ANY, MagicMock, call, patch
 
-from models.model_definitions import StockLSTM, StockLSTMWithAttention, StockLSTMWithCrossStockAttention
+import numpy as np
+import optuna
+import pytest
+import torch
+import torch.nn as nn
+import yaml
+from sklearn.preprocessing import MinMaxScaler
+from torch.utils.data import DataLoader as TorchDataLoader
+from torch.utils.data import TensorDataset as TorchTensorDataset
+
+from models.model_definitions import (
+    StockLSTM,
+    StockLSTMWithAttention,
+    StockLSTMWithCrossStockAttention,
+)
 from models.optimize_hyperparams import objective, run_optimization
+
 
 # --- Fixtures ---
 @pytest.fixture

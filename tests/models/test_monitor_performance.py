@@ -1,14 +1,19 @@
 # tests/models/test_monitor_performance.py
+import io
 import sys
+from datetime import date, datetime, timedelta
 from pathlib import Path
-import pytest
-from unittest.mock import patch, MagicMock, call, ANY
+from unittest.mock import ANY, MagicMock, call, patch
+
 import numpy as np
 import pandas as pd
+import pytest
 import yaml
-from datetime import date, timedelta, datetime
-from sklearn.metrics import mean_absolute_error, mean_squared_error, mean_absolute_percentage_error # For spec or direct use
-import io
+from sklearn.metrics import (  # For spec or direct use
+    mean_absolute_error,
+    mean_absolute_percentage_error,
+    mean_squared_error,
+)
 
 # Add src to sys.path
 PROJECT_ROOT_FOR_TESTS = Path(__file__).resolve().parents[2]
@@ -16,7 +21,8 @@ SRC_PATH = PROJECT_ROOT_FOR_TESTS / "src"
 if str(SRC_PATH) not in sys.path:
     sys.path.insert(0, str(SRC_PATH))
 
-from models import monitor_performance # Import the module
+from models import monitor_performance  # Import the module
+
 
 # --- Fixtures ---
 @pytest.fixture
