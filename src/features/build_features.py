@@ -18,7 +18,7 @@ try:
         save_scalers
     )
 except ImportError:
-    sys.path.append(str(Path(__file__).resolve().parents[1])) 
+    sys.path.append(str(Path(__file__).resolve().parents[1]))
     from utils.db_utils import (
         load_processed_features_from_db,
         save_scaled_features,
@@ -41,11 +41,32 @@ def create_sequences(data_x, data_y, seq_len, pred_len):
     """Create sequences for time series forecasting"""
     sequences_x = []
     sequences_y = []
-    for i in range(len(data_x) - seq_len - pred_len + 1):
+
+    # Calculate the number of possible sequences
+    num_possible_sequences = len(data_x) - (seq_len + pred_len) + 1
+
+    if num_possible_sequences <= 0:
+        # If no sequences can be formed, return empty arrays with correct dimensions
+        # data_x.shape is (timesteps, stocks, features)
+        # data_y.shape is (timesteps, stocks)
+        num_stocks_x = data_x.shape[1]
+        num_features = data_x.shape[2]
+        num_stocks_y = data_y.shape[1]
+        
+        # Return empty arrays with the expected final dimensions
+        # (num_sequences=0, seq_len, num_stocks, num_features)
+        empty_sequences_x = np.empty((0, seq_len, num_stocks_x, num_features))
+        # (num_sequences=0, pred_len, num_stocks)
+        empty_sequences_y = np.empty((0, pred_len, num_stocks_y))
+        
+        return empty_sequences_x, empty_sequences_y
+
+    for i in range(num_possible_sequences):
         seq_x = data_x[i:i + seq_len]
         seq_y = data_y[i + seq_len:i + seq_len + pred_len]
         sequences_x.append(seq_x)
         sequences_y.append(seq_y)
+        
     return np.array(sequences_x), np.array(sequences_y)
 
 def scale_data(X_train, X_test, y_train, y_test, num_features, num_stocks):
@@ -59,14 +80,17 @@ def scale_data(X_train, X_test, y_train, y_test, num_features, num_stocks):
     for stock_idx in range(num_stocks):
         for feature_idx in range(num_features):
             # Fit on training data only
-            feature_data = X_train[:, :, stock_idx, feature_idx].reshape(-1, 1)
-            scalers_x[stock_idx][feature_idx].fit(feature_data)
+            feature_data_train = X_train[:, :, stock_idx, feature_idx].reshape(-1, 1)
+            scalers_x[stock_idx][feature_idx].fit(feature_data_train)
             
             # Transform both train and test
             X_train_scaled[:, :, stock_idx, feature_idx] = scalers_x[stock_idx][feature_idx].transform(
                 X_train[:, :, stock_idx, feature_idx].reshape(-1, 1)).reshape(X_train.shape[0], -1)
-            X_test_scaled[:, :, stock_idx, feature_idx] = scalers_x[stock_idx][feature_idx].transform(
-                X_test[:, :, stock_idx, feature_idx].reshape(-1, 1)).reshape(X_test.shape[0], -1)
+            
+            # Only transform X_test if it's not empty
+            if X_test.size > 0:
+                X_test_scaled[:, :, stock_idx, feature_idx] = scalers_x[stock_idx][feature_idx].transform(
+                    X_test[:, :, stock_idx, feature_idx].reshape(-1, 1)).reshape(X_test.shape[0], -1)
     
     # Scale targets
     y_scalers = [MinMaxScaler() for _ in range(num_stocks)]
@@ -78,8 +102,11 @@ def scale_data(X_train, X_test, y_train, y_test, num_features, num_stocks):
         y_scalers[stock_idx].fit(y_train_for_stock)
         
         y_train_scaled[:, 0, stock_idx] = y_scalers[stock_idx].transform(y_train_for_stock).flatten()
-        y_test_scaled[:, 0, stock_idx] = y_scalers[stock_idx].transform(
-            y_test[:, 0, stock_idx].reshape(-1, 1)).flatten()
+        
+        # Only transform y_test if it's not empty
+        if y_test.size > 0:
+            y_test_scaled[:, 0, stock_idx] = y_scalers[stock_idx].transform(
+                y_test[:, 0, stock_idx].reshape(-1, 1)).flatten()
     
     return X_train_scaled, X_test_scaled, y_train_scaled, y_test_scaled, scalers_x, y_scalers
 
@@ -138,8 +165,11 @@ def run_feature_building(config_path: str, run_id_arg: str) -> Optional[str]:
             logger.error("Processed data is empty, cannot split.")
             return None
         train_size = int(len(processed_data_np) * train_ratio)
-        if train_size < seq_len + pred_len : # Need enough data for at least one sequence
-            logger.error(f"Train size ({train_size}) is too small to create any sequences with seq_len={seq_len}, pred_len={pred_len}.")
+        
+        # Ensure that `test_size` is not less than `pred_len`.
+        if train_size < (seq_len + pred_len) : # Need enough data for at least one sequence
+            logger.error(f"Train size ({train_size}) is too small to create any sequences with seq_len={seq_len}, pred_len={pred_len}. "
+                         f"Minimum required is {seq_len + pred_len}.")
             return None
 
         train_features_raw = processed_data_np[:train_size]
@@ -156,9 +186,10 @@ def run_feature_building(config_path: str, run_id_arg: str) -> Optional[str]:
         if X_train.size == 0 or y_train.size == 0:
             logger.error(f"Failed to create training sequences. X_train shape: {X_train.shape}, y_train shape: {y_train.shape}. Check data length and sequence parameters.")
             return None
-        # X_test or y_test can be empty if test_features_raw is too short, which is acceptable.
-        if X_test.size == 0 and test_features_raw.size > 0 : # only log error if raw test data existed but no sequences were made
-            logger.warning(f"Test sequences (X_test) are empty. X_test shape: {X_test.shape}, y_test shape: {y_test.shape}. This might be due to short test data length.")
+        
+        # X_test or y_test can be empty if test_features_raw is too short. This is acceptable, log as warning.
+        if X_test.size == 0 and test_features_raw.shape[0] > 0 : # only warn if raw test data existed but no sequences were made
+            logger.warning(f"Test sequences (X_test) are empty (shape: {X_test.shape}). This might be due to test data length ({test_features_raw.shape[0]} < {seq_len + pred_len}).")
 
         logger.info(f"Created sequences. X_train: {X_train.shape}, y_train: {y_train.shape}, X_test: {X_test.shape}, y_test: {y_test.shape}")
         
@@ -208,7 +239,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--run_id',
         type=str,
-        required=True, 
+        required=True,
         help='The run_id of the processed dataset (from processed_feature_data table) to use for feature building.'
     )
     args = parser.parse_args()
@@ -233,14 +264,12 @@ if __name__ == '__main__':
     logger.info(f"Starting feature building script with resolved config: {config_path_resolved} for run_id: {cli_run_id_arg}")
 
     try:
-        # Basic validation of database config in params.yaml
         with open(config_path_resolved, 'r') as f:
             config = yaml.safe_load(f)
             if 'database' not in config:
                 logger.error("Database configuration missing from params.yaml")
                 sys.exit(1)
 
-        # Call run_feature_building with the CLI-provided run_id
         returned_run_id = run_feature_building(str(config_path_resolved), run_id_arg=cli_run_id_arg)
         
         if returned_run_id:

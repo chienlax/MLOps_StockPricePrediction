@@ -24,7 +24,6 @@ except ImportError: # Fallback for direct execution if src/models is not a packa
 
 try:
     from src.utils.db_utils import (
-        get_db_connection,
         load_scaled_features,
         load_scalers,
         save_optimization_results
@@ -32,6 +31,7 @@ try:
 except ImportError:
     sys.path.append(str(Path(__file__).resolve().parents[1])) # Add 'src' to path
     from utils.db_utils import (
+        get_db_connection,
         load_scaled_features,
         load_scalers,
         save_optimization_results
@@ -48,8 +48,8 @@ if not logger.handlers:
 
 # ------------------------------------------------------------------
 
-def objective(trial, X_train, y_train, X_test, y_test, 
-              num_features, num_stocks, y_scalers, 
+def objective(trial, X_train, y_train, X_test, y_test,
+              num_features, num_stocks, y_scalers,
               device, optimization_epochs, patience):
     """Optuna objective function for hyperparameter optimization"""
     
@@ -66,14 +66,25 @@ def objective(trial, X_train, y_train, X_test, y_test,
     # Create PyTorch datasets and loaders
     X_train_tensor = torch.tensor(X_train, dtype=torch.float32)
     y_train_tensor = torch.tensor(y_train, dtype=torch.float32)
-    X_test_tensor = torch.tensor(X_test, dtype=torch.float32)
-    y_test_tensor = torch.tensor(y_test, dtype=torch.float32)
     
+    # --- ADDED: Handle potentially empty X_test, y_test more gracefully ---
+    if X_test.size > 0 and y_test.size > 0 :
+        X_test_tensor = torch.tensor(X_test, dtype=torch.float32)
+        y_test_tensor = torch.tensor(y_test, dtype=torch.float32)
+        test_dataset = torch.utils.data.TensorDataset(X_test_tensor, y_test_tensor)
+        test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+    else:
+        # Create an empty loader or handle evaluation differently if test set is empty
+        logger.warning("Test data is empty for this Optuna trial. Using a dummy empty loader.")
+        # Create a dummy empty TensorDataset and DataLoader
+        empty_X = torch.empty(0, X_train_tensor.shape[1], X_train_tensor.shape[2], X_train_tensor.shape[3], dtype=torch.float32)
+        empty_y = torch.empty(0, y_train_tensor.shape[1], y_train_tensor.shape[2], dtype=torch.float32)
+        test_dataset = torch.utils.data.TensorDataset(empty_X, empty_y)
+        test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+    # --- END ADDED ---
+
     train_dataset = torch.utils.data.TensorDataset(X_train_tensor, y_train_tensor)
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-    
-    test_dataset = torch.utils.data.TensorDataset(X_test_tensor, y_test_tensor)
-    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
     
     # Initialize model based on type
     if model_type == 'lstm':
@@ -100,16 +111,17 @@ def objective(trial, X_train, y_train, X_test, y_test,
             num_layers=num_layers,
             dropout_rate=dropout_rate
         ).to(device)
-    
+    else: # Should not happen with categorical suggestion
+        raise ValueError(f"Unknown model_type: {model_type}")
+
     criterion = nn.MSELoss()
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
     
     # Training loop
-    num_epochs = optimization_epochs
+    num_epochs = optimization_epochs # Use the passed argument
     best_val_loss = float('inf')
     patience_counter = 0
-    patience = patience 
-    
+
     for epoch in range(num_epochs):
         model.train()
         total_train_loss = 0
@@ -126,19 +138,24 @@ def objective(trial, X_train, y_train, X_test, y_test,
             
             total_train_loss += loss.item()
         
-        avg_train_loss = total_train_loss / len(train_loader)
+        avg_train_loss = total_train_loss / len(train_loader) if len(train_loader) > 0 else 0
         
-        # Evaluate on test set
-        _, _, metrics = evaluate_model(model, test_loader, criterion, y_scalers, device)
-        
+        # Evaluate on test set only if test_loader has data
+        if len(test_loader.dataset) > 0: # type: ignore
+            _, _, metrics = evaluate_model(model, test_loader, criterion, y_scalers, device)
+            current_val_loss = metrics['test_loss']
+        else: # If no test data, we can't truly validate. Could use train loss or a fixed high loss.
+            current_val_loss = avg_train_loss # Or some other strategy if test data is optional
+            logger.warning("No test data available for Optuna trial evaluation, using average training loss for this epoch.")
+
         # Early stopping check
-        if metrics['test_loss'] < best_val_loss:
-            best_val_loss = metrics['test_loss']
+        if current_val_loss < best_val_loss:
+            best_val_loss = current_val_loss
             patience_counter = 0
         else:
             patience_counter += 1
             if patience_counter >= patience:
-                logger.info(f"Early stopping at epoch {epoch}")
+                logger.info(f"Early stopping at epoch {epoch+1} for trial {trial.number}")
                 break
     
     return best_val_loss
@@ -154,6 +171,7 @@ def run_optimization(config_path: str, run_id_arg: str) -> tuple[Optional[dict],
     Returns:
         tuple[Optional[dict], Optional[str]]: (best_params, run_id_arg) if successful, (None, None) otherwise.
     """
+    params: dict = {} # --- MODIFIED: Initialize params ---
     try:
         with open(config_path, 'r') as f:
             params = yaml.safe_load(f)
@@ -168,7 +186,7 @@ def run_optimization(config_path: str, run_id_arg: str) -> tuple[Optional[dict],
         opt_params = params['optimization']
         n_trials = opt_params['n_trials']
         optimization_epochs = opt_params.get('epochs', 20) # Epochs per Optuna trial
-        patience = opt_params.get('patience', 5) # Early stopping patience per trial
+        patience_optuna = opt_params.get('patience', 5) # Early stopping patience per trial (renamed to avoid conflict with objective's patience)
 
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         logger.info(f"Using device: {device}")
@@ -183,16 +201,21 @@ def run_optimization(config_path: str, run_id_arg: str) -> tuple[Optional[dict],
         if X_train_scaled is None or y_train_scaled is None:
             logger.error(f"Failed to load scaled training data (X_train or y_train) for run_id: {current_run_id}.")
             return None, None
-        if X_test_scaled is None or y_test_scaled is None:
-            logger.warning(f"Scaled test data (X_test or y_test) not found or empty for run_id: {current_run_id}. Optimization will proceed without it if objective allows.")
-            # Ensure objective function can handle empty X_test/y_test or use a validation split from train
-            # For now, assuming objective needs X_test, y_test. If they are critical, make this an error.
-            if X_test_scaled is None or X_test_scaled.size == 0 : X_test_scaled = np.array([]) # Ensure they are empty arrays if None
-            if y_test_scaled is None or y_test_scaled.size == 0 : y_test_scaled = np.array([])
+        
+        # --- MODIFIED: Ensure X_test_scaled and y_test_scaled are handled if None ---
+        if X_test_scaled is None:
+            logger.warning(f"X_test_scaled is None for run_id: {current_run_id}. Creating empty array.")
+            # Create empty array with correct number of dimensions based on X_train_scaled
+            # (0 samples, seq_len, num_stocks, num_features)
+            X_test_scaled = np.empty((0, X_train_scaled.shape[1], X_train_scaled.shape[2], X_train_scaled.shape[3]), dtype=X_train_scaled.dtype)
+        if y_test_scaled is None:
+            logger.warning(f"y_test_scaled is None for run_id: {current_run_id}. Creating empty array.")
+            # (0 samples, pred_len, num_stocks)
+            y_test_scaled = np.empty((0, y_train_scaled.shape[1], y_train_scaled.shape[2]), dtype=y_train_scaled.dtype)
 
 
         logger.info(f"X_train_scaled shape: {X_train_scaled.shape}, y_train_scaled shape: {y_train_scaled.shape}")
-        logger.info(f"X_test_scaled shape: {X_test_scaled.shape if X_test_scaled.size > 0 else 'Empty'}, y_test_scaled shape: {y_test_scaled.shape if y_test_scaled.size > 0 else 'Empty'}")
+        logger.info(f"X_test_scaled shape: {X_test_scaled.shape}, y_test_scaled shape: {y_test_scaled.shape}") # Updated logging for potentially empty arrays
         logger.info("--- Finished Loading Scaled Data ---")
 
         # 2. Load Scalers from database using current_run_id
@@ -202,8 +225,6 @@ def run_optimization(config_path: str, run_id_arg: str) -> tuple[Optional[dict],
             logger.error(f"Failed to load scalers or 'y_scalers' not found for run_id: {current_run_id}.")
             return None, None
         y_scalers = scalers_dict['y_scalers']
-        # tickers = scalers_dict.get('tickers', []) # If needed by objective or evaluation
-        # num_features_from_scaler = scalers_dict.get('num_features') # If needed
         logger.info("--- Finished Loading Scalers ---")
 
         # Determine num_stocks and num_features from the loaded data
@@ -218,7 +239,7 @@ def run_optimization(config_path: str, run_id_arg: str) -> tuple[Optional[dict],
         study = optuna.create_study(direction="minimize", pruner=optuna.pruners.MedianPruner())
         study.optimize(lambda trial: objective(
             trial, X_train_scaled, y_train_scaled, X_test_scaled, y_test_scaled,
-            num_features, num_stocks, y_scalers, device, optimization_epochs, patience
+            num_features, num_stocks, y_scalers, device, optimization_epochs, patience_optuna
         ), n_trials=n_trials, timeout=params['optimization'].get('timeout_seconds', None)) # Optional timeout
         logger.info("--- Finished Optuna Optimization ---")
 
@@ -234,13 +255,7 @@ def run_optimization(config_path: str, run_id_arg: str) -> tuple[Optional[dict],
         # Save to local file if specified in params.yaml (optional)
         output_paths_config = params.get('output_paths', {})
         if 'best_params_path' in output_paths_config:
-            # This path should be absolute or relative to where Airflow runs the script
-            # For Docker, this path needs to be accessible within the container.
-            # Example: /opt/airflow/config/best_params.json (if config is mounted at /opt/airflow/config)
             best_params_file_path_str = output_paths_config['best_params_path']
-            # Ensure the path is treated as being inside the container if run by Airflow
-            # If running locally, it's just a local path.
-            # For now, assume it's a path accessible by the script.
             best_params_output_path = Path(best_params_file_path_str)
             try:
                 best_params_output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -276,7 +291,7 @@ if __name__ == '__main__':
     cli_run_id_arg = args.run_id
 
     config_path_resolved = Path(config_path_arg)
-    if not config_path_resolved.is_absolute(): # Simplified for brevity
+    if not config_path_resolved.is_absolute():
         config_path_resolved = (Path.cwd() / config_path_resolved).resolve()
     if not config_path_resolved.exists():
         logger.error(f"Configuration file not found: {config_path_resolved}")
@@ -287,7 +302,7 @@ if __name__ == '__main__':
     try:
         with open(config_path_resolved, 'r') as f:
             config = yaml.safe_load(f)
-            if 'database' not in config: # Basic validation
+            if 'database' not in config: 
                 logger.error("Database configuration missing from params.yaml")
                 sys.exit(1)
 
@@ -296,7 +311,7 @@ if __name__ == '__main__':
         if best_params and used_run_id:
             logger.info(f"Optimization completed successfully for run_id: {used_run_id}.")
             logger.info(f"Best parameters found: {best_params}")
-            print(f"OPTIMIZATION_SUCCESS_RUN_ID:{used_run_id}") # For Airflow or capture
+            print(f"OPTIMIZATION_SUCCESS_RUN_ID:{used_run_id}") 
         else:
             logger.error(f"Optimization failed for run_id: {cli_run_id_arg}. Check logs.")
             sys.exit(1)
